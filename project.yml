@@ -30,6 +30,25 @@ targets:
         CODE_SIGN_IDENTITY: Apple Development
         DEVELOPMENT_TEAM: K77TX49CTD
         ENABLE_HARDENED_RUNTIME: NO
+  # Unit tests, run with `make test`. The app's sources (minus the @main entry point) are compiled in
+  # rather than hosted in the app, so tests never launch App Mixer, touch its settings, or need audio hardware.
+  AppMixerTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - AppMixerTests
+      - path: AppMixer
+        excludes: [AppMixerApp.swift, Info.plist]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yoyokrazy.AppMixerTests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+    scheme:
+      testTargets: [AppMixerTests]
+      gatherCoverageData: true
   # Renders the SwiftUI views from fixtures and compares them to PNGs in AppMixerSnapshotTests/__Snapshots__.
   # Deliberately not hosted in the app: that would launch App Mixer (real taps, real settings) during tests.
   # Instead the app's sources are compiled in, minus the @main entry point.
