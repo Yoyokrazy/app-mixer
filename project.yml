@@ -1,0 +1,32 @@
+name: AppMixer
+options:
+  bundleIdPrefix: com.yoyokrazy
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  AppMixer:
+    type: application
+    platform: macOS
+    sources: [AppMixer]
+    info:
+      path: AppMixer/Info.plist
+      properties:
+        CFBundleDisplayName: App Mixer
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSUIElement: true
+        LSApplicationCategoryType: public.app-category.utilities
+        NSAudioCaptureUsageDescription: App Mixer intercepts each app's audio so it can set that app's volume.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yoyokrazy.AppMixer
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: Apple Development
+        DEVELOPMENT_TEAM: K77TX49CTD
+        ENABLE_HARDENED_RUNTIME: NO
