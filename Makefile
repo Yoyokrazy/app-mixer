@@ -1,16 +1,23 @@
 APP_NAME := AppMixer
 BUNDLE_ID := com.yoyokrazy.AppMixer
 APP := build/Build/Products/Release/$(APP_NAME).app
+TEST_RESULTS := build/TestResults.xcresult
 # Extra xcodebuild settings, e.g. CI passes version numbers and ad-hoc signing.
 XCODEBUILD_FLAGS ?=
 
-.PHONY: project build run install clean snapshots record-snapshots adopt-ci-snapshots
+.PHONY: project build test run install clean snapshots record-snapshots adopt-ci-snapshots
 
 project:
 	xcodegen generate --quiet
 
 build: project
 	xcodebuild -project $(APP_NAME).xcodeproj -scheme $(APP_NAME) -configuration Release -destination 'generic/platform=macOS' -derivedDataPath build -quiet $(XCODEBUILD_FLAGS) build
+
+# Unit tests with code coverage, then a per-file coverage summary of the app's sources.
+test: project
+	rm -rf $(TEST_RESULTS)
+	xcodebuild -project $(APP_NAME).xcodeproj -scheme $(APP_NAME)Tests -destination 'platform=macOS,arch=$(shell uname -m)' -derivedDataPath build -enableCodeCoverage YES -resultBundlePath $(TEST_RESULTS) -quiet $(XCODEBUILD_FLAGS) test
+	scripts/coverage.sh $(TEST_RESULTS)
 
 # Visual regression tests: render the views from fixtures and compare them to AppMixerSnapshotTests/__Snapshots__.
 # Mismatches write actual/diff/reference PNGs to build/snapshot-failures. After an intended UI change, run

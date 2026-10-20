@@ -48,23 +48,13 @@ final class AppTap {
 
         do {
             let subDevices = output.id.aggregateSubDeviceUIDs ?? [output.uid]
-            let aggregate: [String: Any] = [
-                kAudioAggregateDeviceNameKey: "\(Self.aggregateNamePrefix)\(app.id)",
-                kAudioAggregateDeviceUIDKey: UUID().uuidString,
-                kAudioAggregateDeviceMainSubDeviceKey: subDevices[0],
-                kAudioAggregateDeviceClockDeviceKey: subDevices[0],
-                kAudioAggregateDeviceIsPrivateKey: true,
-                kAudioAggregateDeviceIsStackedKey: true,
-                kAudioAggregateDeviceTapAutoStartKey: true,
-                kAudioAggregateDeviceSubDeviceListKey: subDevices.enumerated().map { index, uid in
-                    [kAudioSubDeviceUIDKey: uid, kAudioSubDeviceDriftCompensationKey: index > 0]
-                },
-                kAudioAggregateDeviceTapListKey: [[
-                    kAudioSubTapUIDKey: description.uuid.uuidString,
-                    // Bluetooth output shares the tap's clock domain; compensating there causes periodic crackle.
-                    kAudioSubTapDriftCompensationKey: !output.id.isBluetooth,
-                ]],
-            ]
+            let aggregate = Self.aggregateDescription(
+                appID: app.id,
+                tapUUID: description.uuid,
+                subDevices: subDevices,
+                // Bluetooth output shares the tap's clock domain; compensating there causes periodic crackle.
+                compensateTapDrift: !output.id.isBluetooth
+            )
             try check(AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &aggregateID), "create aggregate device")
             guard Self.waitUntilAlive(aggregateID) else {
                 throw CoreAudioError(operation: "start aggregate device", status: kAudioHardwareNotRunningError)
@@ -74,8 +64,7 @@ final class AppTap {
             let channels = output.id.preferredStereoChannels
             let renderer = TapRenderer(
                 gain: gain,
-                // ~30 ms one-pole ramp so slider moves don't click.
-                rampCoefficient: 1 - exp(-1 / (sampleRate * 0.03)),
+                rampCoefficient: TapRenderer.rampCoefficient(sampleRate: sampleRate),
                 left: channels.left,
                 right: channels.right
             )
@@ -105,6 +94,32 @@ final class AppTap {
         procID = nil
     }
 
+    /// A private, stacked aggregate that plays the tap on `subDevices`, clocked by the first of them.
+    /// Only the extra sub-devices of a Multi-Output Device get drift compensation.
+    nonisolated static func aggregateDescription(
+        appID: String,
+        tapUUID: UUID,
+        subDevices: [String],
+        compensateTapDrift: Bool
+    ) -> [String: Any] {
+        [
+            kAudioAggregateDeviceNameKey: "\(aggregateNamePrefix)\(appID)",
+            kAudioAggregateDeviceUIDKey: UUID().uuidString,
+            kAudioAggregateDeviceMainSubDeviceKey: subDevices[0],
+            kAudioAggregateDeviceClockDeviceKey: subDevices[0],
+            kAudioAggregateDeviceIsPrivateKey: true,
+            kAudioAggregateDeviceIsStackedKey: true,
+            kAudioAggregateDeviceTapAutoStartKey: true,
+            kAudioAggregateDeviceSubDeviceListKey: subDevices.enumerated().map { index, uid in
+                [kAudioSubDeviceUIDKey: uid, kAudioSubDeviceDriftCompensationKey: index > 0]
+            },
+            kAudioAggregateDeviceTapListKey: [[
+                kAudioSubTapUIDKey: tapUUID.uuidString,
+                kAudioSubTapDriftCompensationKey: compensateTapDrift,
+            ]],
+        ]
+    }
+
     /// Order matters: stop IO, then the IOProc (blocks until the callback returns), the aggregate, and the tap.
     private static func destroy(tapID: AudioObjectID, aggregateID: AudioDeviceID, procID: AudioDeviceIOProcID?) {
         if aggregateID.isValid, let procID {
@@ -121,7 +136,7 @@ final class AppTap {
 
     /// Aggregates are normally alive as soon as they're created; poll briefly just in case.
     /// Deliberately doesn't spin the run loop, which could re-enter Mixer mid-setup.
-    private static func waitUntilAlive(_ device: AudioDeviceID, timeout: TimeInterval = 1) -> Bool {
+    static func waitUntilAlive(_ device: AudioDeviceID, timeout: TimeInterval = 1) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while !device.isAlive {
             guard Date() < deadline else { return false }
@@ -137,18 +152,10 @@ final class AppTap {
         let inputCount = aggregateID.streamCount(scope: kAudioObjectPropertyScopeInput)
         guard inputCount > 1 else { return }
 
-        // AudioHardwareIOProcStreamUsage: { void *mIOProc; UInt32 mNumberStreams; UInt32 mStreamIsOn[]; }
-        let headerSize = MemoryLayout<UnsafeMutableRawPointer>.size + MemoryLayout<UInt32>.size
-        let totalSize = headerSize + inputCount * MemoryLayout<UInt32>.size
+        let totalSize = streamUsageSize(streamCount: inputCount)
         let raw = UnsafeMutableRawPointer.allocate(byteCount: totalSize, alignment: MemoryLayout<UnsafeMutableRawPointer>.alignment)
         defer { raw.deallocate() }
-
-        raw.storeBytes(of: unsafeBitCast(procID, to: UnsafeMutableRawPointer.self), as: UnsafeMutableRawPointer.self)
-        raw.storeBytes(of: UInt32(inputCount), toByteOffset: MemoryLayout<UnsafeMutableRawPointer>.size, as: UInt32.self)
-        for index in 0..<inputCount {
-            let isTapStream: UInt32 = index == inputCount - 1 ? 1 : 0
-            raw.storeBytes(of: isTapStream, toByteOffset: headerSize + index * MemoryLayout<UInt32>.size, as: UInt32.self)
-        }
+        writeTapOnlyStreamUsage(into: raw, procID: unsafeBitCast(procID, to: UnsafeMutableRawPointer.self), streamCount: inputCount)
 
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyIOProcStreamUsage,
@@ -156,6 +163,22 @@ final class AppTap {
             mElement: kAudioObjectPropertyElementMain
         )
         AudioObjectSetPropertyData(aggregateID, &address, 0, nil, UInt32(totalSize), raw)
+    }
+
+    /// Byte size of an AudioHardwareIOProcStreamUsage: { void *mIOProc; UInt32 mNumberStreams; UInt32 mStreamIsOn[]; }
+    nonisolated static func streamUsageSize(streamCount: Int) -> Int {
+        MemoryLayout<UnsafeMutableRawPointer>.size + MemoryLayout<UInt32>.size + streamCount * MemoryLayout<UInt32>.size
+    }
+
+    /// Fills an AudioHardwareIOProcStreamUsage that turns on only the last input stream, the tap.
+    nonisolated static func writeTapOnlyStreamUsage(into raw: UnsafeMutableRawPointer, procID: UnsafeMutableRawPointer, streamCount: Int) {
+        let headerSize = MemoryLayout<UnsafeMutableRawPointer>.size + MemoryLayout<UInt32>.size
+        raw.storeBytes(of: procID, as: UnsafeMutableRawPointer.self)
+        raw.storeBytes(of: UInt32(streamCount), toByteOffset: MemoryLayout<UnsafeMutableRawPointer>.size, as: UInt32.self)
+        for index in 0..<streamCount {
+            let isTapStream: UInt32 = index == streamCount - 1 ? 1 : 0
+            raw.storeBytes(of: isTapStream, toByteOffset: headerSize + index * MemoryLayout<UInt32>.size, as: UInt32.self)
+        }
     }
 }
 
@@ -178,6 +201,11 @@ final class TapRenderer: Sendable {
     var targetGain: Float {
         get { Float(bitPattern: target.load(ordering: .relaxed)) }
         set { target.store(newValue.bitPattern, ordering: .relaxed) }
+    }
+
+    /// Per-sample coefficient of a one-pole ramp with the given time constant; ~30 ms keeps slider moves from clicking.
+    static func rampCoefficient(sampleRate: Float, timeConstant: Float = 0.03) -> Float {
+        1 - exp(-1 / (sampleRate * timeConstant))
     }
 
     func render(input: UnsafePointer<AudioBufferList>, output: UnsafeMutablePointer<AudioBufferList>) {

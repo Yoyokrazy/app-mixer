@@ -68,6 +68,16 @@ make project   # just generate AppMixer.xcodeproj to open in Xcode
 
 Local builds are signed with the "Apple Development" identity for team `K77TX49CTD` (see `project.yml`). That stable signature means the audio-capture permission survives rebuilds.
 
+## Testing
+
+```sh
+make test      # unit tests with code coverage, then a per-file coverage summary
+```
+
+The `AppMixerTests` target ([Swift Testing](https://developer.apple.com/documentation/testing)) compiles the app's sources directly instead of launching App Mixer, so tests need no audio devices, permissions, or GUI session, and never touch App Mixer's saved settings. `Mixer`'s Core Audio side effects, permission, and timers are injectable, so its routing, persistence, and tap decisions run against fakes; `TapRenderer` runs on synthetic buffers; the views are rendered in each state (the snapshot tests below check how they look); `scripts/next-version.sh` runs against throwaway git repos. The **Tests** workflow runs this on every pull request and push to `main` and posts the coverage table to the job summary.
+
+Creating real taps can't run in CI. Opt-in integration tests do that on a Mac with an output device: `TEST_RUNNER_APP_MIXER_INTEGRATION=1 make test`. They tap only the test process itself, and skip (rather than prompt) unless whatever launched them (Terminal, Xcode, ...) already has System Audio Recording.
+
 ## Visual testing
 
 Snapshot tests render the popover and the settings flyout from fixed fixtures (fake apps, icons, and devices; nothing from your Mac) in light and dark at 2x, and compare them to the PNGs in `AppMixerSnapshotTests/__Snapshots__/<environment>`.

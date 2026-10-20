@@ -33,16 +33,16 @@ final class Mixer {
     private(set) var outputDevices: [OutputDevice] = []
     private(set) var defaultOutput: OutputDevice?
     private(set) var lastError: String?
-    let permission = CapturePermission()
+    let permission: CapturePermission
 
     @ObservationIgnored private var allApps: [String: AudioApp] = [:]
-    @ObservationIgnored private var taps: [String: AppTap] = [:]
+    @ObservationIgnored private var taps: [String: any ProcessTap] = [:]
     @ObservationIgnored private var pendingTeardowns: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var retries: [String: (attempt: Int, task: Task<Void, Never>)] = [:]
     @ObservationIgnored private var sampleRates: [AudioDeviceID: Double] = [:]
-    @ObservationIgnored private var rateListeners: [AudioDeviceID: PropertyListener] = [:]
-    @ObservationIgnored private var systemListeners: [PropertyListener] = []
-    @ObservationIgnored private var processListeners: [AudioObjectID: PropertyListener] = [:]
+    @ObservationIgnored private var rateListeners: [AudioDeviceID: AnyObject] = [:]
+    @ObservationIgnored private var systemListeners: [AnyObject] = []
+    @ObservationIgnored private var processListeners: [AudioObjectID: AnyObject] = [:]
     @ObservationIgnored private var refreshScheduled = false
     /// Previews and snapshot tests seed fixed state; it must never be rescanned from Core Audio or saved.
     @ObservationIgnored private var isFixture = false
@@ -50,9 +50,21 @@ final class Mixer {
     private static let levelsKey = "levels"
     private static let routesKey = "routes"
     private let logger = Logger(subsystem: "com.yoyokrazy.AppMixer", category: "Mixer")
+    private let system: any AudioSystem
+    private let defaults: UserDefaults
+    /// Waits before tearing down a tap and between retries; injectable so tests control time.
+    private let delay: @Sendable (Duration) async throws -> Void
 
-    init() {
-        let defaults = UserDefaults.standard
+    init(
+        system: any AudioSystem = CoreAudioSystem(),
+        defaults: UserDefaults = .standard,
+        permission: CapturePermission = CapturePermission(),
+        delay: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    ) {
+        self.system = system
+        self.defaults = defaults
+        self.permission = permission
+        self.delay = delay
         levels = defaults.data(forKey: Self.levelsKey).flatMap { try? JSONDecoder().decode([String: AppLevel].self, from: $0) } ?? [:]
         routes = defaults.data(forKey: Self.routesKey).flatMap { try? JSONDecoder().decode([String: Route].self, from: $0) } ?? [:]
     }
@@ -62,9 +74,9 @@ final class Mixer {
         permission.requestIfNeeded()
 
         systemListeners = [
-            PropertyListener(.system, kAudioHardwarePropertyProcessObjectList) { [weak self] in self?.scheduleRefresh() },
-            PropertyListener(.system, kAudioHardwarePropertyDefaultOutputDevice) { [weak self] in self?.updateDevices() },
-            PropertyListener(.system, kAudioHardwarePropertyDevices) { [weak self] in self?.updateDevices() },
+            system.listen(to: .system, kAudioHardwarePropertyProcessObjectList) { [weak self] in self?.scheduleRefresh() },
+            system.listen(to: .system, kAudioHardwarePropertyDefaultOutputDevice) { [weak self] in self?.updateDevices() },
+            system.listen(to: .system, kAudioHardwarePropertyDevices) { [weak self] in self?.updateDevices() },
         ].compactMap { $0 }
 
         updateDevices()
@@ -150,7 +162,7 @@ final class Mixer {
     private func save(_ value: some Encodable, forKey key: String) {
         guard !isFixture else { return }
         if let data = try? JSONEncoder().encode(value) {
-            UserDefaults.standard.set(data, forKey: key)
+            defaults.set(data, forKey: key)
         }
     }
 
@@ -167,7 +179,7 @@ final class Mixer {
 
     func refresh() {
         guard !isFixture else { return }
-        let scanned = AudioAppScanner.scan()
+        let scanned = system.scanApps()
         allApps = Dictionary(uniqueKeysWithValues: scanned.map { ($0.id, $0) })
 
         // Dock apps with an audio connection are listed even when silent; background agents only while
@@ -186,7 +198,7 @@ final class Mixer {
         }
         // IsRunningOutput never posts change notifications; IsRunning does whenever a process starts or stops IO.
         for object in wanted where processListeners[object] == nil {
-            processListeners[object] = PropertyListener(object, kAudioProcessPropertyIsRunning) { [weak self] in
+            processListeners[object] = system.listen(to: object, kAudioProcessPropertyIsRunning) { [weak self] in
                 self?.scheduleRefresh()
             }
         }
@@ -195,21 +207,21 @@ final class Mixer {
     }
 
     private func updateDevices() {
-        let devices = OutputDevice.all
-        let defaultDevice = OutputDevice(AudioObjectID.defaultOutputDevice)
+        let devices = system.outputDevices()
+        let defaultDevice = system.defaultOutputDevice()
         if devices != outputDevices { outputDevices = devices }
         if defaultDevice != defaultOutput { defaultOutput = defaultDevice }
 
         // A rate change (e.g. AirPods switching to the call profile) leaves an aggregate running at the wrong
         // rate, so watch every device a tap could be playing to.
-        var listeners: [AudioDeviceID: PropertyListener] = [:]
+        var listeners: [AudioDeviceID: AnyObject] = [:]
         for device in devices + [defaultDevice].compactMap({ $0 }) where listeners[device.id] == nil {
             if let existing = rateListeners.removeValue(forKey: device.id) {
                 listeners[device.id] = existing
                 continue
             }
-            sampleRates[device.id] = device.id.nominalSampleRate
-            listeners[device.id] = PropertyListener(device.id, kAudioDevicePropertyNominalSampleRate) { [weak self] in
+            sampleRates[device.id] = system.sampleRate(of: device.id)
+            listeners[device.id] = system.listen(to: device.id, kAudioDevicePropertyNominalSampleRate) { [weak self] in
                 self?.sampleRateChanged(device.id)
             }
         }
@@ -220,7 +232,7 @@ final class Mixer {
     }
 
     private func sampleRateChanged(_ device: AudioDeviceID) {
-        guard let rate = device.nominalSampleRate, rate != sampleRates[device] else { return }
+        guard let rate = system.sampleRate(of: device), rate != sampleRates[device] else { return }
         sampleRates[device] = rate
         for id in taps.filter({ $0.value.outputID == device }).map(\.key) {
             removeTap(for: id)
@@ -254,7 +266,7 @@ final class Mixer {
             tap.gain = level.gain
             if pendingTeardowns[id] == nil {
                 pendingTeardowns[id] = Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(1))
+                    try? await self.delay(.seconds(1))
                     guard !Task.isCancelled else { return }
                     self.pendingTeardowns[id] = nil
                     if self.level(for: id).isUnity, !self.isRerouted(id) { self.removeTap(for: id) }
@@ -266,7 +278,7 @@ final class Mixer {
         pendingTeardowns.removeValue(forKey: id)?.cancel()
 
         // A helper can exit between the last scan and now; tapping a dead process object fails with '!obj'.
-        let live = app.processes.filter { $0.processPID != nil }
+        let live = app.processes.filter { system.isProcessAlive($0) }
         guard !live.isEmpty else {
             removeTap(for: id)
             return
@@ -284,7 +296,7 @@ final class Mixer {
         // Make before break: if the new tap fails (e.g. a helper exits mid-setup), the old one keeps the app
         // at its level instead of letting it jump back to full volume.
         do {
-            let tap = try AppTap(app: app, output: output, gain: level.gain)
+            let tap = try system.makeTap(for: app, on: output, gain: level.gain)
             taps.updateValue(tap, forKey: id)?.destroy()
             retries.removeValue(forKey: id)?.task.cancel()
             lastError = nil
@@ -301,7 +313,7 @@ final class Mixer {
         guard attempt <= 5 else { return }
         retries[id]?.task.cancel()
         let task = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(250 << attempt))
+            try? await self.delay(.milliseconds(250 << attempt))
             guard !Task.isCancelled else { return }
             self.syncTap(for: id)
         }

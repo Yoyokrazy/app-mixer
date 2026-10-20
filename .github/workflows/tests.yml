@@ -1,0 +1,53 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # Hosted arm64 macOS runners are often backed up; Intel ones pick up jobs reliably.
+    runs-on: macos-26-intel
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Show toolchain
+        run: xcodebuild -version
+
+      # Ad-hoc signed: CI has no signing certificate.
+      - name: Test
+        run: make test XCODEBUILD_FLAGS="CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM="
+
+      - name: Coverage summary
+        if: ${{ !cancelled() && hashFiles('build/TestResults.xcresult/Info.plist') != '' }}
+        run: |
+          {
+            echo "## Code coverage"
+            echo
+            scripts/coverage.sh build/TestResults.xcresult --markdown
+            echo
+            echo "Not covered: creating real taps and TCC prompts need hardware and permission (see the opt-in integration tests), and view actions need real clicks."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Release configuration, universal, with the @main entry point the test target leaves out.
+      - name: Build app
+        run: make build XCODEBUILD_FLAGS="CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM="
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: TestResults
+          path: build/TestResults.xcresult
+          if-no-files-found: ignore
