@@ -17,7 +17,7 @@ build: project
 # `make record-snapshots`, look at the updated PNGs, and commit them.
 SNAPSHOT_TESTS = xcodebuild -project $(APP_NAME).xcodeproj -scheme AppMixerSnapshotTests -destination 'platform=macOS,arch=$(shell uname -m)' -derivedDataPath build $(XCODEBUILD_FLAGS) test
 # -quiet would hide Swift Testing's results, so keep just errors and the test lines (✔/✘ plus each issue's details).
-SNAPSHOT_OUTPUT = { grep -E '(^|: )error: |^(✔|✘|↳ Snapshot|↳ No reference|    (reference|actual|diff):|  If the change|\*\* TEST)' || true; }
+SNAPSHOT_OUTPUT = { grep -E '(^|: )error: |^(✔|✘|↳ Snapshot|↳ No |\*\* TEST)|^ +(reference:|actual:|diff:|If the change|Review and commit)' || true; }
 
 snapshots: project
 	@set -o pipefail; $(SNAPSHOT_TESTS) 2>&1 | $(SNAPSHOT_OUTPUT)
