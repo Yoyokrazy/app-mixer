@@ -2,7 +2,7 @@
 
 A tiny macOS menu bar app that does one thing: per-app volume.
 
-Click the menu bar icon to see every app that's using audio, each with its own volume slider and mute button. Apps that are open but silent (say, a browser paused on a video) are listed too, dimmed, so you can set their level before they play. Levels are remembered per app and re-applied whenever the app is running.
+Click the menu bar icon to see every app that's using audio, each with its own volume slider and mute button. Apps that are open but silent (say, a browser paused on a video) are listed too, so you can set their level before they play. Levels are remembered per app and re-applied whenever the app is running.
 
 The gear in the popover opens a small settings flyout with one option, **Layout**: *Compact* (default, one line per app, hover the icon for its name) or *Standard* (app name above each slider).
 

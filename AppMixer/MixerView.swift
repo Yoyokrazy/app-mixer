@@ -86,7 +86,6 @@ private struct AppRow: View {
                 }
             }
         }
-        .opacity(app.isPlaying ? 1 : 0.6)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(app.name)
     }
