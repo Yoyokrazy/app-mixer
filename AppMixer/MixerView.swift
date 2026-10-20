@@ -27,7 +27,7 @@ struct MixerView: View {
                 .help("Settings")
                 .accessibilityLabel("Settings")
                 .popover(isPresented: $showingSettings, arrowEdge: .bottom) {
-                    SettingsView(mixer: mixer)
+                    SettingsView()
                 }
             }
 
@@ -90,7 +90,7 @@ private struct AppRow: View {
                         HStack(spacing: 4) {
                             Text(app.name)
                                 .lineLimit(1)
-                            if mixer.advanced, let route = mixer.route(for: app.id) {
+                            if let route = mixer.route(for: app.id) {
                                 let connected = mixer.output(for: app.id)?.uid == route.uid
                                 Text("→ \(route.name)\(connected ? "" : " (disconnected)")")
                                     .foregroundStyle(.secondary)
@@ -138,17 +138,16 @@ private struct AppRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 34, alignment: .trailing)
 
-            if mixer.advanced {
-                OutputPicker(app: app, mixer: mixer)
-            }
+            OutputPicker(app: app, mixer: mixer)
         }
     }
 }
 
-/// Advanced mode: per-app output device. The icon is tinted when the app is routed somewhere specific.
+/// Per-app output device. The icon is tinted when the app is routed somewhere specific.
 private struct OutputPicker: View {
     let app: AudioApp
     let mixer: Mixer
+    @State private var isHovering = false
 
     var body: some View {
         let route = mixer.route(for: app.id)
@@ -171,13 +170,17 @@ private struct OutputPicker: View {
             .labelsHidden()
         } label: {
             Image(systemName: output?.symbolName ?? "speaker.slash")
-                .foregroundStyle(isRouted ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-                .frame(width: 18)
+                .foregroundStyle(isRouted ? AnyShapeStyle(.tint) : AnyShapeStyle(isHovering ? .primary : .secondary))
+                .frame(width: 24, height: 20)
+                .background(.primary.opacity(isHovering ? 0.15 : 0), in: RoundedRectangle(cornerRadius: 5))
+                .contentShape(RoundedRectangle(cornerRadius: 5))
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovering)
         .help(helpText(route: route, output: output, defaultName: defaultName))
         .accessibilityLabel("Output for \(app.name)")
     }

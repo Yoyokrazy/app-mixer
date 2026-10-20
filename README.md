@@ -1,20 +1,19 @@
 # App Mixer
 
-A tiny macOS menu bar app for per-app volume, with optional per-app output routing.
+A tiny macOS menu bar app for per-app volume and output routing.
 
-Click the menu bar icon to see every app that's using audio, each with its own volume slider and mute button. Apps that are open but silent (say, a browser paused on a video) are listed too, so you can set their level before they play. Levels are remembered per app and re-applied whenever the app is running.
+Click the menu bar icon to see every app that's using audio, each with its own volume slider, mute button, and output picker. Apps that are open but silent (say, a browser paused on a video) are listed too, so you can set them up before they play. Settings are remembered per app and re-applied whenever the app is running.
 
-Next to the title, **↺** resets every app to 100% on the system output device (clearing all saved levels and routes), and the **gear** opens a small settings flyout:
-
-- **Layout**: *Compact* (default, one line per app, hover the icon for its name) or *Standard* (app name above each slider).
-- **Advanced** (off by default): adds an output picker to each row so you can send an app to a specific device, e.g. Spotify to AirPods while everything else stays on the speakers. Routed apps get a tinted device icon (and "→ device" in Standard layout). If a routed device disconnects, the app falls back to the system output and returns when the device does. Routes are remembered while Advanced is off but not applied.
+- **Output picker** (device icon at the end of each row): send an app to a specific device, e.g. Spotify to AirPods while everything else stays on the speakers, or leave it on *System Default* to follow Control Center. Routed apps get a tinted icon (and "→ device" in Standard layout). If a routed device disconnects, the app falls back to the system output and returns when the device does.
+- **↺** next to the title resets every app to 100% on the system output device, clearing all saved levels and routes.
+- **Gear** opens a small settings flyout with **Layout**: *Compact* (default, one line per app, hover the icon for its name) or *Standard* (app name above each slider).
 
 ## How it works
 
 Uses the Core Audio process-tap API (macOS 14.2+), the same approach as [FineTune](https://github.com/ronitsingh10/FineTune), minus everything except the mixer:
 
 1. A **process tap** (`CATapDescription`, `.mutedWhenTapped`) mutes the app at the HAL and exposes its audio as a stream.
-2. A **private aggregate device** pairs that stream with the app's output device: the system default, or its routed device in Advanced mode.
+2. A **private aggregate device** pairs that stream with the app's output device: the system default, or the device it's routed to.
 3. An **IOProc** copies tap → output, applying a smoothed gain (square-law slider taper, ~30 ms ramp).
 
 Apps at 100% on the default device are never tapped, so App Mixer adds no latency or overhead until you turn something down or route it elsewhere. Once an app is changed, its tap stays up for as long as the app is a Core Audio client (its IO only runs while the app is actually playing), so short sounds like notifications start at the right level and on the right device. Taps and aggregates are private to the App Mixer process, so macOS tears them down and un-mutes every app if App Mixer quits or crashes.
@@ -75,7 +74,7 @@ Run the **Release** workflow (Actions → Release → Run workflow, or `gh workf
 
 ## Limitations
 
-- Changed apps play on App Mixer's chosen device (the system default unless routed in Advanced mode). An app that you've pointed at a different device itself (e.g. Zoom set to a headset) will move while it's turned down or routed.
+- Changed apps play on App Mixer's chosen device (the system default unless routed). An app that you've pointed at a different device itself (e.g. Zoom set to a headset) will move while it's turned down or routed.
 - The first ~20–90 ms of an app's very first sound can play at full volume on its original device, before App Mixer sees the app's new audio process.
 - Volume tops out at 100%; there's no boost.
 - Permission status is read via the private TCC framework (as FineTune does), since there's no public API for it.

@@ -35,14 +35,6 @@ final class Mixer {
     private(set) var lastError: String?
     let permission = CapturePermission()
 
-    /// Advanced mode exposes per-app output routing. Routes are remembered but only applied while it's on.
-    var advanced: Bool {
-        didSet {
-            UserDefaults.standard.set(advanced, forKey: Self.advancedKey)
-            refresh()
-        }
-    }
-
     @ObservationIgnored private var allApps: [String: AudioApp] = [:]
     @ObservationIgnored private var taps: [String: AppTap] = [:]
     @ObservationIgnored private var pendingTeardowns: [String: Task<Void, Never>] = [:]
@@ -55,14 +47,12 @@ final class Mixer {
 
     private static let levelsKey = "levels"
     private static let routesKey = "routes"
-    private static let advancedKey = "advanced"
     private let logger = Logger(subsystem: "com.yoyokrazy.AppMixer", category: "Mixer")
 
     init() {
         let defaults = UserDefaults.standard
         levels = defaults.data(forKey: Self.levelsKey).flatMap { try? JSONDecoder().decode([String: AppLevel].self, from: $0) } ?? [:]
         routes = defaults.data(forKey: Self.routesKey).flatMap { try? JSONDecoder().decode([String: Route].self, from: $0) } ?? [:]
-        advanced = defaults.bool(forKey: Self.advancedKey)
     }
 
     func start() {
@@ -143,9 +133,9 @@ final class Mixer {
         syncTap(for: id)
     }
 
-    /// Where an app's audio plays: its routed device (in Advanced mode, while connected), else the default.
+    /// Where an app's audio plays: its routed device while that's connected, else the system default.
     func output(for id: String) -> OutputDevice? {
-        if advanced, let route = routes[id], let device = outputDevices.first(where: { $0.uid == route.uid }) {
+        if let route = routes[id], let device = outputDevices.first(where: { $0.uid == route.uid }) {
             return device
         }
         return defaultOutput
@@ -179,7 +169,7 @@ final class Mixer {
         // Dock apps with an audio connection are listed even when silent; background agents only while
         // playing or when you've changed them.
         let visible = scanned.filter {
-            $0.isRegularApp || $0.isPlaying || !level(for: $0.id).isUnity || (advanced && routes[$0.id] != nil)
+            $0.isRegularApp || $0.isPlaying || !level(for: $0.id).isUnity || routes[$0.id] != nil
         }
         if visible != apps {
             apps = visible
