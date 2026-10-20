@@ -68,6 +68,21 @@ make project   # just generate AppMixer.xcodeproj to open in Xcode
 
 Local builds are signed with the "Apple Development" identity for team `K77TX49CTD` (see `project.yml`). That stable signature means the audio-capture permission survives rebuilds.
 
+## Visual testing
+
+Snapshot tests render the popover and the settings flyout from fixed fixtures (fake apps, icons, and devices; nothing from your Mac) in light and dark at 2x, and compare them to the PNGs in `AppMixerSnapshotTests/__Snapshots__`.
+
+```sh
+make snapshots          # verify; mismatches write actual/diff/reference PNGs to build/snapshot-failures
+make record-snapshots   # re-record every reference after an intended UI change, then review and commit the PNGs
+```
+
+- **Coverage:** compact and standard rows; routed (tinted icon, "→ device"), muted, and disconnected-route apps; reset enabled and disabled; empty state; permission notice; error text; the settings flyout.
+- **Isolation:** the tests don't launch App Mixer, touch Core Audio, or read or write your settings. The test bundle compiles the app's sources and renders `Mixer`s seeded with `Mixer(fixtureApps:…)`. The same fixtures (`AppMixer/Fixtures.swift`) feed the SwiftUI previews.
+- **Tolerance:** a pixel counts as changed only if a channel moves by more than 8/255, and a test fails once more than 20 pixels change. That absorbs Apple silicon vs. Intel rounding (at most 3–4/255) but still catches a single changed character.
+- Controls render in their inactive-window style (e.g. no accent fill on sliders), since making the window key would steal focus from whatever you're doing.
+- **CI:** the **Snapshots** workflow runs `make snapshots` on `macos-26-intel` for pull requests and pushes to `main`, and uploads the `snapshot-failures` artifact when it fails. If CI ever renders differently from your Mac (e.g. after a macOS or Xcode update), record on the runner instead: `gh workflow run snapshots.yml --ref <branch> -f record=true`, then `gh run download <run-id> -n snapshot-references -D AppMixerSnapshotTests/__Snapshots__` and commit the PNGs.
+
 ## Releasing
 
 Releases are automatic. Every merge to `main` triggers the **Release** workflow, which builds a universal app on a macOS runner, stamps the version, ad-hoc signs, and publishes `AppMixer.zip` to a new `v<version>` tag and release, with the commits since the previous tag as notes.
