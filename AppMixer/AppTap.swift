@@ -10,7 +10,10 @@ import Synchronization
 /// so the system tears them down (un-muting the app) if App Mixer exits for any reason.
 @MainActor
 final class AppTap {
+    nonisolated static let aggregateNamePrefix = "AppMixer-"
+
     let processes: [AudioObjectID]
+    let outputID: AudioDeviceID
     let outputUID: String
 
     private let render: TapRenderer
@@ -25,6 +28,7 @@ final class AppTap {
 
     init(app: AudioApp, output: OutputDevice, gain: Float) throws {
         processes = app.processes
+        outputID = output.id
         outputUID = output.uid
 
         let description = CATapDescription(stereoMixdownOfProcesses: app.processes)
@@ -45,7 +49,7 @@ final class AppTap {
         do {
             let subDevices = output.id.aggregateSubDeviceUIDs ?? [output.uid]
             let aggregate: [String: Any] = [
-                kAudioAggregateDeviceNameKey: "AppMixer-\(app.id)",
+                kAudioAggregateDeviceNameKey: "\(Self.aggregateNamePrefix)\(app.id)",
                 kAudioAggregateDeviceUIDKey: UUID().uuidString,
                 kAudioAggregateDeviceMainSubDeviceKey: subDevices[0],
                 kAudioAggregateDeviceClockDeviceKey: subDevices[0],
@@ -153,11 +157,6 @@ final class AppTap {
         )
         AudioObjectSetPropertyData(aggregateID, &address, 0, nil, UInt32(totalSize), raw)
     }
-}
-
-struct OutputDevice: Equatable {
-    let id: AudioDeviceID
-    let uid: String
 }
 
 /// State shared with the real-time IO thread. Everything here is lock- and allocation-free.

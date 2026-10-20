@@ -18,6 +18,7 @@ enum RowStyle: String, CaseIterable, Identifiable {
 
 /// Flyout shown from the gear button; deliberately a popover rather than a Settings window.
 struct SettingsView: View {
+    @Bindable var mixer: Mixer
     @AppStorage(RowStyle.storageKey) private var rowStyle: RowStyle = .compact
 
     var body: some View {
@@ -34,6 +35,24 @@ struct SettingsView: View {
             .labelsHidden()
 
             Text(rowStyle == .compact ? "One line per app; hover an icon for its name." : "Shows each app's name above its slider.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Divider()
+                .padding(.vertical, 2)
+
+            HStack {
+                Text("Advanced")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Toggle("Advanced", isOn: $mixer.advanced)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .labelsHidden()
+            }
+
+            Text("Choose an output device for each app. Routes are remembered when this is off, but apps follow the system output.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

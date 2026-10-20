@@ -109,6 +109,48 @@ extension AudioDeviceID {
     }
 }
 
+/// A device that can play audio, as offered in Control Center's output list.
+struct OutputDevice: Equatable {
+    let id: AudioDeviceID
+    let uid: String
+    let name: String
+    let transport: UInt32
+
+    init?(_ id: AudioDeviceID) {
+        guard id.isValid, let uid = id.deviceUID else { return nil }
+        self.id = id
+        self.uid = uid
+        name = id.readString(kAudioObjectPropertyName) ?? uid
+        transport = id.read(kAudioDevicePropertyTransportType, initial: UInt32(0)) ?? 0
+    }
+
+    var symbolName: String {
+        switch transport {
+        case kAudioDeviceTransportTypeBuiltIn: "laptopcomputer"
+        case kAudioDeviceTransportTypeBluetooth, kAudioDeviceTransportTypeBluetoothLE: "headphones"
+        case kAudioDeviceTransportTypeAirPlay: "airplayaudio"
+        case kAudioDeviceTransportTypeHDMI, kAudioDeviceTransportTypeDisplayPort: "tv"
+        case kAudioDeviceTransportTypeVirtual: "waveform"
+        case kAudioDeviceTransportTypeAggregate: "square.stack.3d.up"
+        default: "hifispeaker"
+        }
+    }
+
+    /// Output devices the user could pick, in system order. Skips hidden devices, ones macOS won't use as
+    /// a default output (loopback drivers like Teams Audio), and App Mixer's own aggregate devices.
+    static var all: [OutputDevice] {
+        AudioObjectID.system.readArray(kAudioHardwarePropertyDevices, initial: AudioDeviceID.unknown).compactMap { id in
+            guard id.streamCount(scope: kAudioObjectPropertyScopeOutput) > 0,
+                  (id.read(kAudioDevicePropertyIsHidden, initial: UInt32(0)) ?? 0) == 0,
+                  (id.read(kAudioDevicePropertyDeviceCanBeDefaultDevice, scope: kAudioObjectPropertyScopeOutput, initial: UInt32(0)) ?? 0) != 0,
+                  let device = OutputDevice(id),
+                  !device.name.hasPrefix(AppTap.aggregateNamePrefix)
+            else { return nil }
+            return device
+        }
+    }
+}
+
 // MARK: - Listening
 
 /// Registers a HAL property listener that fires on the main queue; removed on deinit.

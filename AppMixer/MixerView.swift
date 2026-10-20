@@ -7,10 +7,18 @@ struct MixerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
+            HStack(spacing: 10) {
                 Text("App Volume")
                     .font(.headline)
                 Spacer()
+                Button { mixer.resetAll() } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .disabled(!mixer.hasChanges)
+                .help("Reset all apps to 100% on the system output")
+                .accessibilityLabel("Reset")
                 Button { showingSettings.toggle() } label: {
                     Image(systemName: "gearshape")
                 }
@@ -19,7 +27,7 @@ struct MixerView: View {
                 .help("Settings")
                 .accessibilityLabel("Settings")
                 .popover(isPresented: $showingSettings, arrowEdge: .bottom) {
-                    SettingsView()
+                    SettingsView(mixer: mixer)
                 }
             }
 
@@ -79,8 +87,17 @@ private struct AppRow: View {
                 HStack(spacing: 10) {
                     icon(size: 24)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(app.name)
-                            .lineLimit(1)
+                        HStack(spacing: 4) {
+                            Text(app.name)
+                                .lineLimit(1)
+                            if mixer.advanced, let route = mixer.route(for: app.id) {
+                                let connected = mixer.output(for: app.id)?.uid == route.uid
+                                Text("→ \(route.name)\(connected ? "" : " (disconnected)")")
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                            }
+                        }
                         controls
                     }
                 }
@@ -120,7 +137,55 @@ private struct AppRow: View {
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .frame(width: 34, alignment: .trailing)
+
+            if mixer.advanced {
+                OutputPicker(app: app, mixer: mixer)
+            }
         }
+    }
+}
+
+/// Advanced mode: per-app output device. The icon is tinted when the app is routed somewhere specific.
+private struct OutputPicker: View {
+    let app: AudioApp
+    let mixer: Mixer
+
+    var body: some View {
+        let route = mixer.route(for: app.id)
+        let output = mixer.output(for: app.id)
+        let isRouted = route != nil && output?.uid == route?.uid
+        let defaultName = mixer.defaultOutput?.name ?? "None"
+
+        Menu {
+            Picker("Output", selection: Binding(get: { route?.uid }, set: { mixer.setRoute(uid: $0, for: app.id) })) {
+                Text("System Default (\(defaultName))").tag(String?.none)
+                Divider()
+                ForEach(mixer.outputDevices, id: \.uid) { device in
+                    Text(device.name).tag(Optional(device.uid))
+                }
+                if let route, !mixer.outputDevices.contains(where: { $0.uid == route.uid }) {
+                    Text("\(route.name) (disconnected)").tag(Optional(route.uid))
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            Image(systemName: output?.symbolName ?? "speaker.slash")
+                .foregroundStyle(isRouted ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                .frame(width: 18)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(helpText(route: route, output: output, defaultName: defaultName))
+        .accessibilityLabel("Output for \(app.name)")
+    }
+
+    private func helpText(route: Route?, output: OutputDevice?, defaultName: String) -> String {
+        guard let route else { return "Output: System Default (\(defaultName))" }
+        if output?.uid == route.uid { return "Output: \(route.name)" }
+        return "Output: \(route.name) is disconnected, using \(defaultName)"
     }
 }
 
