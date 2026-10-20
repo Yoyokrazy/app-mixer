@@ -9,13 +9,20 @@ struct AudioApp: Identifiable, Equatable {
     /// Every Core Audio process object belonging to this app (main process plus helpers), sorted.
     var processes: [AudioObjectID]
     var isPlaying: Bool
+    /// A Dock app (as opposed to a menu bar agent or system UI like loginwindow or Control Center).
+    let isRegularApp: Bool
 
     static func == (lhs: AudioApp, rhs: AudioApp) -> Bool {
-        lhs.id == rhs.id && lhs.name == rhs.name && lhs.processes == rhs.processes && lhs.isPlaying == rhs.isPlaying
+        lhs.id == rhs.id && lhs.name == rhs.name && lhs.processes == rhs.processes
+            && lhs.isPlaying == rhs.isPlaying && lhs.isRegularApp == rhs.isRegularApp
     }
 }
 
 /// Groups Core Audio's process objects into user-facing apps.
+///
+/// A process shows up in Core Audio's list once it opens an audio connection and stays there while it
+/// runs, even when silent. That's what makes "apps that could play sound" (e.g. a browser paused on a
+/// video) discoverable; apps that have never touched audio aren't listed until they do.
 @MainActor
 enum AudioAppScanner {
     static func scan() -> [AudioApp] {
@@ -44,7 +51,8 @@ enum AudioAppScanner {
                     name: owner.localizedName ?? bundleID,
                     icon: owner.icon ?? NSWorkspace.shared.icon(for: .application),
                     processes: [object],
-                    isPlaying: playing
+                    isPlaying: playing,
+                    isRegularApp: owner.activationPolicy == .regular
                 )
             }
         }

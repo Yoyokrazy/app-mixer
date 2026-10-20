@@ -105,7 +105,8 @@ final class Mixer {
         let scanned = AudioAppScanner.scan()
         allApps = Dictionary(uniqueKeysWithValues: scanned.map { ($0.id, $0) })
 
-        let visible = scanned.filter { $0.isPlaying || !level(for: $0.id).isUnity }
+        // Dock apps with an audio connection are listed even when silent; background agents only while playing.
+        let visible = scanned.filter { $0.isRegularApp || $0.isPlaying || !level(for: $0.id).isUnity }
         if visible != apps {
             apps = visible
             logger.info("Listing \(visible.map(\.name).joined(separator: ", "), privacy: .public)")

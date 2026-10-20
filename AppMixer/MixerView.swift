@@ -28,7 +28,7 @@ struct MixerView: View {
             }
 
             if mixer.apps.isEmpty {
-                Text("No apps are playing audio")
+                Text("No apps are using audio")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
