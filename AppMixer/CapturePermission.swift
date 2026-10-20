@@ -1,4 +1,5 @@
 import AppKit
+import os
 
 /// "System Audio Recording" (kTCCServiceAudioCapture) permission. Without it, a process tap still mutes
 /// the app but only delivers silence, so App Mixer must never tap while this is denied.
@@ -12,6 +13,7 @@ final class CapturePermission {
 
     private(set) var status: Status = .notDetermined
     @ObservationIgnored var onChange: (() -> Void)?
+    @ObservationIgnored private let logger = Logger(subsystem: "com.yoyokrazy.AppMixer", category: "Permission")
 
     func refresh() {
         update(Self.preflight())
@@ -34,6 +36,7 @@ final class CapturePermission {
     private func update(_ newStatus: Status) {
         guard newStatus != status else { return }
         status = newStatus
+        logger.info("System Audio Recording permission: \(String(describing: newStatus), privacy: .public)")
         onChange?()
     }
 
