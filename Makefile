@@ -4,7 +4,7 @@ APP := build/Build/Products/Release/$(APP_NAME).app
 # Extra xcodebuild settings, e.g. CI passes version numbers and ad-hoc signing.
 XCODEBUILD_FLAGS ?=
 
-.PHONY: project build run install clean snapshots record-snapshots
+.PHONY: project build run install clean snapshots record-snapshots adopt-ci-snapshots
 
 project:
 	xcodegen generate --quiet
@@ -24,6 +24,11 @@ snapshots: project
 
 record-snapshots: project
 	@set -o pipefail; TEST_RUNNER_RECORD_SNAPSHOTS=1 $(SNAPSHOT_TESTS) 2>&1 | $(SNAPSHOT_OUTPUT)
+
+# References are per macOS + Xcode major version, and CI's differs from a typical dev Mac. When the Snapshots
+# workflow fails, this copies the images it rendered into that runner's reference folder: make adopt-ci-snapshots RUN=<run id>
+adopt-ci-snapshots:
+	scripts/adopt-ci-snapshots.sh $(RUN)
 
 # Quit gracefully (so taps are torn down) before relaunching.
 run: build
