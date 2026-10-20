@@ -28,6 +28,7 @@ final class Mixer {
     @ObservationIgnored private var allApps: [String: AudioApp] = [:]
     @ObservationIgnored private var taps: [String: AppTap] = [:]
     @ObservationIgnored private var pendingTeardowns: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var retries: [String: (attempt: Int, task: Task<Void, Never>)] = [:]
     @ObservationIgnored private var output: OutputDevice?
     @ObservationIgnored private var outputSampleRate: Double?
     @ObservationIgnored private var systemListeners: [PropertyListener] = []
@@ -57,7 +58,7 @@ final class Mixer {
     }
 
     func shutdown() {
-        for id in Set(taps.keys).union(pendingTeardowns.keys) {
+        for id in Set(taps.keys).union(pendingTeardowns.keys).union(retries.keys) {
             removeTap(for: id)
         }
     }
@@ -158,7 +159,7 @@ final class Mixer {
 
     private func syncTap(for id: String) {
         let level = level(for: id)
-        guard let app = allApps[id], let output, permission.status == .authorized else {
+        guard var app = allApps[id], let output, permission.status == .authorized else {
             removeTap(for: id)
             return
         }
@@ -180,23 +181,52 @@ final class Mixer {
 
         pendingTeardowns.removeValue(forKey: id)?.cancel()
 
+        // A helper can exit between the last scan and now; tapping a dead process object fails with '!obj'.
+        let live = app.processes.filter { $0.processPID != nil }
+        guard !live.isEmpty else {
+            removeTap(for: id)
+            return
+        }
+        if live != app.processes {
+            app.processes = live
+            allApps[id] = app
+        }
+
         if let tap = taps[id], tap.processes == app.processes, tap.outputUID == output.uid {
             tap.gain = level.gain
             return
         }
 
-        removeTap(for: id)
+        // Make before break: if the new tap fails (e.g. a helper exits mid-setup), the old one keeps the app
+        // at its level instead of letting it jump back to full volume.
         do {
-            taps[id] = try AppTap(app: app, output: output, gain: level.gain)
+            let tap = try AppTap(app: app, output: output, gain: level.gain)
+            taps.updateValue(tap, forKey: id)?.destroy()
+            retries.removeValue(forKey: id)?.task.cancel()
             lastError = nil
         } catch {
             logger.error("Tap failed for \(app.name, privacy: .public): \(error.localizedDescription, privacy: .public)")
             lastError = "\(app.name): \(error.localizedDescription)"
+            scheduleRetry(for: id)
         }
+    }
+
+    /// Retries after 0.5, 1, 2, 4, then 8 seconds; resets on success.
+    private func scheduleRetry(for id: String) {
+        let attempt = (retries[id]?.attempt ?? 0) + 1
+        guard attempt <= 5 else { return }
+        retries[id]?.task.cancel()
+        let task = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250 << attempt))
+            guard !Task.isCancelled else { return }
+            self.syncTap(for: id)
+        }
+        retries[id] = (attempt, task)
     }
 
     private func removeTap(for id: String) {
         pendingTeardowns.removeValue(forKey: id)?.cancel()
+        retries.removeValue(forKey: id)?.task.cancel()
         taps.removeValue(forKey: id)?.destroy()
     }
 }
