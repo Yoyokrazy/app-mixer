@@ -4,6 +4,8 @@ A tiny macOS menu bar app that does one thing: per-app volume.
 
 Click the menu bar icon to see every app that's playing audio, each with its own volume slider and mute button. Levels are remembered per app and re-applied when the app plays again.
 
+The gear in the popover opens a small settings flyout with one option, **Layout**: *Compact* (default, one line per app, hover the icon for its name) or *Standard* (app name above each slider).
+
 ## How it works
 
 Uses the Core Audio process-tap API (macOS 14.2+), the same approach as [FineTune](https://github.com/ronitsingh10/FineTune), minus everything except the mixer:

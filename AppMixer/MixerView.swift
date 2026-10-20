@@ -2,11 +2,26 @@ import SwiftUI
 
 struct MixerView: View {
     let mixer: Mixer
+    @AppStorage(RowStyle.storageKey) private var rowStyle: RowStyle = .compact
+    @State private var showingSettings = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("App Volume")
-                .font(.headline)
+            HStack {
+                Text("App Volume")
+                    .font(.headline)
+                Spacer()
+                Button { showingSettings.toggle() } label: {
+                    Image(systemName: "gearshape")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Settings")
+                .accessibilityLabel("Settings")
+                .popover(isPresented: $showingSettings, arrowEdge: .bottom) {
+                    SettingsView()
+                }
+            }
 
             if mixer.permission.status == .denied {
                 PermissionNotice(permission: mixer.permission)
@@ -18,8 +33,10 @@ struct MixerView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
             } else {
-                ForEach(mixer.apps) { app in
-                    AppRow(app: app, mixer: mixer)
+                VStack(alignment: .leading, spacing: rowStyle == .compact ? 6 : 12) {
+                    ForEach(mixer.apps) { app in
+                        AppRow(app: app, mixer: mixer, style: rowStyle)
+                    }
                 }
             }
 
@@ -47,44 +64,64 @@ struct MixerView: View {
 private struct AppRow: View {
     let app: AudioApp
     let mixer: Mixer
+    let style: RowStyle
 
     var body: some View {
-        let level = mixer.level(for: app.id)
-        let silent = level.muted || level.volume == 0
-
-        HStack(spacing: 10) {
-            Image(nsImage: app.icon)
-                .resizable()
-                .frame(width: 28, height: 28)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(app.name)
-                    .lineLimit(1)
-
-                HStack(spacing: 6) {
-                    Button { mixer.toggleMute(for: app.id) } label: {
-                        Image(systemName: silent ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                            .frame(width: 18)
+        Group {
+            switch style {
+            case .compact:
+                HStack(spacing: 8) {
+                    icon(size: 18)
+                        .help(app.name)
+                    controls
+                }
+            case .standard:
+                HStack(spacing: 10) {
+                    icon(size: 24)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(app.name)
+                            .lineLimit(1)
+                        controls
                     }
-                    .buttonStyle(.plain)
-                    .help(level.muted ? "Unmute" : "Mute")
-
-                    Slider(
-                        value: Binding(get: { level.volume }, set: { mixer.setVolume($0, for: app.id) }),
-                        in: 0...1
-                    )
-                    .controlSize(.small)
-                    .opacity(level.muted ? 0.4 : 1)
-
-                    Text("\(Int((level.volume * 100).rounded()))%")
-                        .font(.caption)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                        .frame(width: 34, alignment: .trailing)
                 }
             }
         }
         .opacity(app.isPlaying ? 1 : 0.6)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(app.name)
+    }
+
+    private func icon(size: CGFloat) -> some View {
+        Image(nsImage: app.icon)
+            .resizable()
+            .frame(width: size, height: size)
+    }
+
+    private var controls: some View {
+        let level = mixer.level(for: app.id)
+        let silent = level.muted || level.volume == 0
+
+        return HStack(spacing: 6) {
+            Button { mixer.toggleMute(for: app.id) } label: {
+                Image(systemName: silent ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .frame(width: 18)
+            }
+            .buttonStyle(.plain)
+            .help(level.muted ? "Unmute" : "Mute")
+
+            Slider(
+                value: Binding(get: { level.volume }, set: { mixer.setVolume($0, for: app.id) }),
+                in: 0...1
+            )
+            .controlSize(.small)
+            .opacity(level.muted ? 0.4 : 1)
+
+            Text("\(Int((level.volume * 100).rounded()))%")
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 34, alignment: .trailing)
+        }
     }
 }
 
