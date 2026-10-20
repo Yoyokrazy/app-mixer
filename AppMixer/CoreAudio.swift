@@ -124,6 +124,13 @@ struct OutputDevice: Equatable {
         transport = id.read(kAudioDevicePropertyTransportType, initial: UInt32(0)) ?? 0
     }
 
+    init(id: AudioDeviceID, uid: String, name: String, transport: UInt32) {
+        self.id = id
+        self.uid = uid
+        self.name = name
+        self.transport = transport
+    }
+
     var symbolName: String {
         switch transport {
         case kAudioDeviceTransportTypeBuiltIn: "laptopcomputer"

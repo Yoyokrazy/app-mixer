@@ -44,6 +44,8 @@ final class Mixer {
     @ObservationIgnored private var systemListeners: [PropertyListener] = []
     @ObservationIgnored private var processListeners: [AudioObjectID: PropertyListener] = [:]
     @ObservationIgnored private var refreshScheduled = false
+    /// Previews and snapshot tests seed fixed state; it must never be rescanned from Core Audio or saved.
+    @ObservationIgnored private var isFixture = false
 
     private static let levelsKey = "levels"
     private static let routesKey = "routes"
@@ -146,6 +148,7 @@ final class Mixer {
     }
 
     private func save(_ value: some Encodable, forKey key: String) {
+        guard !isFixture else { return }
         if let data = try? JSONEncoder().encode(value) {
             UserDefaults.standard.set(data, forKey: key)
         }
@@ -163,6 +166,7 @@ final class Mixer {
     }
 
     func refresh() {
+        guard !isFixture else { return }
         let scanned = AudioAppScanner.scan()
         allApps = Dictionary(uniqueKeysWithValues: scanned.map { ($0.id, $0) })
 
@@ -310,3 +314,29 @@ final class Mixer {
         taps.removeValue(forKey: id)?.destroy()
     }
 }
+
+#if DEBUG
+extension Mixer {
+    /// A mixer with fixed state for SwiftUI previews and snapshot tests. It is never started, never rescans
+    /// Core Audio (so `onAppear` can't swap in the machine's real apps), and never saves to `UserDefaults`.
+    convenience init(
+        fixtureApps apps: [AudioApp],
+        levels: [String: AppLevel] = [:],
+        routes: [String: Route] = [:],
+        outputDevices: [OutputDevice] = [],
+        defaultOutput: OutputDevice? = nil,
+        lastError: String? = nil,
+        permission: CapturePermission.Status = .authorized
+    ) {
+        self.init()
+        isFixture = true
+        self.apps = apps
+        self.levels = levels
+        self.routes = routes
+        self.outputDevices = outputDevices
+        self.defaultOutput = defaultOutput
+        self.lastError = lastError
+        self.permission.pin(permission)
+    }
+}
+#endif

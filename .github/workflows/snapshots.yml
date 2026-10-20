@@ -1,0 +1,70 @@
+name: Snapshots
+
+on:
+  pull_request:
+    paths:
+      - AppMixer/**
+      - AppMixerSnapshotTests/**
+      - project.yml
+      - Makefile
+      - scripts/adopt-ci-snapshots.sh
+      - .github/workflows/snapshots.yml
+  push:
+    branches: [main]
+    paths:
+      - AppMixer/**
+      - AppMixerSnapshotTests/**
+      - project.yml
+      - Makefile
+      - scripts/adopt-ci-snapshots.sh
+      - .github/workflows/snapshots.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: snapshots-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  snapshots:
+    # Hosted arm64 macOS runners have been failing to get a machine. References are kept per macOS + Xcode
+    # major version (see SnapshotEnvironment), so this runner checks AppMixerSnapshotTests/__Snapshots__/macos26-xcode26.
+    runs-on: macos-26-intel
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+
+      # Ad-hoc signed: CI has no signing certificate.
+      - name: Run snapshot tests
+        run: make snapshots XCODEBUILD_FLAGS="CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM="
+
+      # Best effort: the account's artifact storage can be full. The renders are in the log below either way.
+      - name: Upload failed snapshots
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snapshot-failures
+          path: build/snapshot-failures
+          if-no-files-found: ignore
+
+      # `make adopt-ci-snapshots RUN=<run id>` turns these into this runner's references.
+      - name: Print rendered snapshots
+        if: failure()
+        run: |
+          [ -d build/snapshot-failures ] || exit 0
+          echo "::group::Rendered snapshots (base64 tar.gz, for make adopt-ci-snapshots RUN=$GITHUB_RUN_ID)"
+          echo "BEGIN-SNAPSHOT-ARCHIVE"
+          find build/snapshot-failures -name '*.actual.png' | tar -czf - -T - | base64 -b 76
+          echo "END-SNAPSHOT-ARCHIVE"
+          echo "::endgroup::"
