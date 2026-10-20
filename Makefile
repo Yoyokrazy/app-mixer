@@ -10,7 +10,7 @@ project:
 	xcodegen generate --quiet
 
 build: project
-	xcodebuild -project $(APP_NAME).xcodeproj -scheme $(APP_NAME) -configuration Release -derivedDataPath build -quiet $(XCODEBUILD_FLAGS) build
+	xcodebuild -project $(APP_NAME).xcodeproj -scheme $(APP_NAME) -configuration Release -destination 'generic/platform=macOS' -derivedDataPath build -quiet $(XCODEBUILD_FLAGS) build
 
 # Quit gracefully (so taps are torn down) before relaunching.
 run: build
