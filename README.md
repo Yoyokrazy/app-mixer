@@ -70,18 +70,21 @@ Local builds are signed with the "Apple Development" identity for team `K77TX49C
 
 ## Visual testing
 
-Snapshot tests render the popover and the settings flyout from fixed fixtures (fake apps, icons, and devices; nothing from your Mac) in light and dark at 2x, and compare them to the PNGs in `AppMixerSnapshotTests/__Snapshots__`.
+Snapshot tests render the popover and the settings flyout from fixed fixtures (fake apps, icons, and devices; nothing from your Mac) in light and dark at 2x, and compare them to the PNGs in `AppMixerSnapshotTests/__Snapshots__/<environment>`.
 
 ```sh
-make snapshots          # verify; mismatches write actual/diff/reference PNGs to build/snapshot-failures
-make record-snapshots   # re-record every reference after an intended UI change, then review and commit the PNGs
+make snapshots                     # verify; mismatches write actual/diff/reference PNGs to build/snapshot-failures
+make record-snapshots              # re-record this Mac's references after an intended UI change
+make adopt-ci-snapshots RUN=<id>   # take the CI runner's references from a failed Snapshots run
 ```
 
 - **Coverage:** compact and standard rows; routed (tinted icon, "→ device"), muted, and disconnected-route apps; reset enabled and disabled; empty state; permission notice; error text; the settings flyout.
 - **Isolation:** the tests don't launch App Mixer, touch Core Audio, or read or write your settings. The test bundle compiles the app's sources and renders `Mixer`s seeded with `Mixer(fixtureApps:…)`. The same fixtures (`AppMixer/Fixtures.swift`) feed the SwiftUI previews.
+- **One set of references per toolchain:** text layout depends on the Xcode SDK (Xcode 26 lays the popover out a few points shorter than Xcode 27), so references are kept per macOS + Xcode major version, e.g. `macos26-xcode27` (a dev Mac) and `macos26-xcode26` (CI). A toolchain without references records them and fails, so you can review and commit them.
 - **Tolerance:** a pixel counts as changed only if a channel moves by more than 8/255, and a test fails once more than 20 pixels change. That absorbs Apple silicon vs. Intel rounding (at most 3–4/255) but still catches a single changed character.
 - Controls render in their inactive-window style (e.g. no accent fill on sliders), since making the window key would steal focus from whatever you're doing.
-- **CI:** the **Snapshots** workflow runs `make snapshots` on `macos-26-intel` for pull requests and pushes to `main`, and uploads the `snapshot-failures` artifact when it fails. If CI ever renders differently from your Mac (e.g. after a macOS or Xcode update), record on the runner instead: `gh workflow run snapshots.yml --ref <branch> -f record=true`, then `gh run download <run-id> -n snapshot-references -D AppMixerSnapshotTests/__Snapshots__` and commit the PNGs.
+- **CI:** the **Snapshots** workflow runs `make snapshots` on `macos-26-intel` for pull requests and pushes to `main`. When it fails, it uploads a `snapshot-failures` artifact (if artifact storage allows) and also prints the rendered images into the log.
+- **After an intended UI change:** run `make record-snapshots` and push. When CI fails on the same change, review its renders and run `make adopt-ci-snapshots RUN=<run id>` (find the ID with `gh run list -w Snapshots`). Commit both sets.
 
 ## Releasing
 
