@@ -29,12 +29,13 @@ struct SnapshotTolerance: Sendable {
     static let `default` = SnapshotTolerance()
 }
 
-/// Compares `view` to `__Snapshots__/<name>-<appearance>.png` next to the calling test file.
+/// Compares `view` to `__Snapshots__/<environment>/<name>-<appearance>.png` next to the calling test file.
 ///
+/// - References are kept per `SnapshotEnvironment`, because text layout differs between Xcode versions.
 /// - Missing references are recorded and the test fails, so CI can never pass without them.
 /// - Set `RECORD_SNAPSHOTS=1` (`make record-snapshots`) to overwrite every reference instead of comparing.
-/// - On a mismatch, the actual render, the reference, and a diff are written to `SNAPSHOT_ARTIFACTS`
-///   (default `build/snapshot-failures`) and attached to the test.
+/// - On a mismatch, the actual render, the reference, and a diff are written to
+///   `SNAPSHOT_ARTIFACTS/<environment>` (default `build/snapshot-failures`) and attached to the test.
 @MainActor
 func assertSnapshot(
     of view: some View,
@@ -45,11 +46,13 @@ func assertSnapshot(
     sourceLocation: SourceLocation = #_sourceLocation
 ) {
     let fileName = "\(name)-\(appearance.rawValue)"
+    let environment = SnapshotEnvironment.current
     let testFile = URL(fileURLWithPath: "\(filePath)")
     let referenceURL = testFile.deletingLastPathComponent()
         .appendingPathComponent("__Snapshots__")
+        .appendingPathComponent(environment)
         .appendingPathComponent("\(fileName).png")
-    let artifacts = SnapshotFiles.artifactsDirectory(testFile: testFile)
+    let artifacts = SnapshotFiles.artifactsDirectory(testFile: testFile).appendingPathComponent(environment)
 
     let actual = SnapshotRenderer.render(view, appearance: appearance)
     SnapshotFiles.removeArtifacts(named: fileName, in: artifacts)
@@ -62,7 +65,13 @@ func assertSnapshot(
     guard let reference = SnapshotFiles.read(referenceURL) else {
         SnapshotFiles.write(actual, to: referenceURL)
         SnapshotFiles.write(actual, to: artifacts.appendingPathComponent("\(fileName).actual.png"))
-        Issue.record("No reference for \(fileName); recorded \(referenceURL.path). Check it, commit it, and re-run.", sourceLocation: sourceLocation)
+        Issue.record(
+            """
+            No \(environment) reference for \(fileName); recorded \(referenceURL.path).
+              Review and commit it. From CI, adopt the run's renders with `make adopt-ci-snapshots RUN=<run id>`.
+            """,
+            sourceLocation: sourceLocation
+        )
         return
     }
 
@@ -83,14 +92,29 @@ func assertSnapshot(
 
     Issue.record(
         """
-        Snapshot \(fileName) doesn't match its reference: \(diff.summary)
+        Snapshot \(fileName) doesn't match its \(environment) reference: \(diff.summary)
           reference: \(referenceURL.path)
           actual:    \(actualURL.path)
           diff:      \(diffURL.path)
-        If the change is intended, run `make record-snapshots` and commit the updated PNGs.
+          If the change is intended, run `make record-snapshots` (or, from CI, `make adopt-ci-snapshots RUN=<run id>`) and commit the PNGs.
         """,
         sourceLocation: sourceLocation
     )
+}
+
+/// The toolchain a render belongs to, e.g. `macos26-xcode27`. The SDK the tests are built with changes text
+/// layout (Xcode 26 lays the popover out a few points shorter than Xcode 27), so each macOS + Xcode major
+/// version has its own references.
+enum SnapshotEnvironment {
+    static let current: String = {
+        let os = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        let xcode = (Bundle(for: BundleToken.self).object(forInfoDictionaryKey: "DTXcode") as? String)
+            .flatMap { Int($0) }
+            .map { String($0 / 100) } ?? "unknown"
+        return "macos\(os)-xcode\(xcode)"
+    }()
+
+    private final class BundleToken {}
 }
 
 // MARK: - Rendering
