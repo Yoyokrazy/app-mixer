@@ -101,19 +101,23 @@ final class Mixer {
         }
     }
 
-    private func refresh() {
+    func refresh() {
         let scanned = AudioAppScanner.scan()
         allApps = Dictionary(uniqueKeysWithValues: scanned.map { ($0.id, $0) })
 
         let visible = scanned.filter { $0.isPlaying || !level(for: $0.id).isUnity }
-        if visible != apps { apps = visible }
+        if visible != apps {
+            apps = visible
+            logger.info("Listing \(visible.map(\.name).joined(separator: ", "), privacy: .public)")
+        }
 
         let wanted = Set(scanned.flatMap(\.processes))
         for object in Array(processListeners.keys) where !wanted.contains(object) {
             processListeners[object] = nil
         }
+        // IsRunningOutput never posts change notifications; IsRunning does whenever a process starts or stops IO.
         for object in wanted where processListeners[object] == nil {
-            processListeners[object] = PropertyListener(object, kAudioProcessPropertyIsRunningOutput) { [weak self] in
+            processListeners[object] = PropertyListener(object, kAudioProcessPropertyIsRunning) { [weak self] in
                 self?.scheduleRefresh()
             }
         }

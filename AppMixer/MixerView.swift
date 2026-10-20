@@ -37,7 +37,10 @@ struct MixerView: View {
         }
         .padding(14)
         .frame(width: 300)
-        .onAppear { mixer.permission.refresh() }
+        .onAppear {
+            mixer.permission.refresh()
+            mixer.refresh()
+        }
     }
 }
 
