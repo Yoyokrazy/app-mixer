@@ -7,6 +7,13 @@ on:
         description: Version to release, without the leading "v" (e.g. 0.2.0)
         required: true
         type: string
+      runner:
+        description: macOS runner (the build is universal; use Intel if arm64 runners are backed up)
+        type: choice
+        default: macos-26
+        options:
+          - macos-26
+          - macos-26-intel
 
 permissions:
   contents: write
@@ -16,7 +23,7 @@ concurrency:
 
 jobs:
   release:
-    runs-on: macos-26
+    runs-on: ${{ inputs.runner }}
     env:
       VERSION: ${{ inputs.version }}
       TAG: v${{ inputs.version }}

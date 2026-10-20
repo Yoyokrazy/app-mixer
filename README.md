@@ -49,7 +49,7 @@ Local builds are signed with the "Apple Development" identity for team `K77TX49C
 
 ## Releasing
 
-Run the **Release** workflow (Actions → Release → Run workflow, or `gh workflow run release.yml -f version=0.2.0`). It builds on a macOS runner, stamps the version, ad-hoc signs, and publishes `AppMixer.zip` to a new `v<version>` tag and release, with the commits since the previous tag as notes.
+Run the **Release** workflow (Actions → Release → Run workflow, or `gh workflow run release.yml -f version=0.2.0`). It builds a universal app on a macOS runner, stamps the version, ad-hoc signs, and publishes `AppMixer.zip` to a new `v<version>` tag and release, with the commits since the previous tag as notes. If arm64 runners are backed up, pick `macos-26-intel` (`-f runner=macos-26-intel`).
 
 ## Limitations
 
