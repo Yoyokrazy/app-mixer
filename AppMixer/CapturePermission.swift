@@ -14,8 +14,11 @@ final class CapturePermission {
     private(set) var status: Status = .notDetermined
     @ObservationIgnored var onChange: (() -> Void)?
     @ObservationIgnored private let logger = Logger(subsystem: "com.yoyokrazy.AppMixer", category: "Permission")
+    /// Previews and snapshot tests pin a status that must not be replaced by this machine's real one.
+    @ObservationIgnored private var isPinned = false
 
     func refresh() {
+        guard !isPinned else { return }
         update(Self.preflight())
     }
 
@@ -65,3 +68,13 @@ final class CapturePermission {
         }
     }
 }
+
+#if DEBUG
+extension CapturePermission {
+    /// Fixes the status for previews and snapshot tests; TCC is never queried afterwards.
+    func pin(_ status: Status) {
+        isPinned = true
+        self.status = status
+    }
+}
+#endif
