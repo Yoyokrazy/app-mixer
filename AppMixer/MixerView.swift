@@ -7,23 +7,23 @@ struct MixerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
+            HStack(spacing: 2) {
                 Text("App Volume")
                     .font(.headline)
                 Spacer()
                 Button { mixer.resetAll() } label: {
                     Image(systemName: "arrow.counterclockwise")
+                        .modifier(HoverHighlight())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
                 .disabled(!mixer.hasChanges)
                 .help("Reset all apps to 100% on the system output")
                 .accessibilityLabel("Reset")
                 Button { showingSettings.toggle() } label: {
                     Image(systemName: "gearshape")
+                        .modifier(HoverHighlight())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
                 .help("Settings")
                 .accessibilityLabel("Settings")
                 .popover(isPresented: $showingSettings, arrowEdge: .bottom) {
@@ -147,7 +147,6 @@ private struct AppRow: View {
 private struct OutputPicker: View {
     let app: AudioApp
     let mixer: Mixer
-    @State private var isHovering = false
 
     var body: some View {
         let route = mixer.route(for: app.id)
@@ -170,17 +169,12 @@ private struct OutputPicker: View {
             .labelsHidden()
         } label: {
             Image(systemName: output?.symbolName ?? "speaker.slash")
-                .foregroundStyle(isRouted ? AnyShapeStyle(.tint) : AnyShapeStyle(isHovering ? .primary : .secondary))
-                .frame(width: 24, height: 20)
-                .background(.primary.opacity(isHovering ? 0.15 : 0), in: RoundedRectangle(cornerRadius: 5))
-                .contentShape(RoundedRectangle(cornerRadius: 5))
+                .modifier(HoverHighlight(isActive: isRouted))
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
-        .onHover { isHovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: isHovering)
         .help(helpText(route: route, output: output, defaultName: defaultName))
         .accessibilityLabel("Output for \(app.name)")
     }
@@ -189,6 +183,25 @@ private struct OutputPicker: View {
         guard let route else { return "Output: System Default (\(defaultName))" }
         if output?.uid == route.uid { return "Output: \(route.name)" }
         return "Output: \(route.name) is disconnected, using \(defaultName)"
+    }
+}
+
+/// Hover feedback for the small icon buttons: a rounded highlight and a brighter icon. `isActive` keeps the
+/// icon tinted (e.g. a routed output) regardless of hover. Disabled buttons don't react.
+private struct HoverHighlight: ViewModifier {
+    var isActive = false
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovering = false
+
+    func body(content: Content) -> some View {
+        let highlighted = isHovering && isEnabled
+        content
+            .foregroundStyle(isActive ? AnyShapeStyle(.tint) : AnyShapeStyle(highlighted ? .primary : .secondary))
+            .frame(width: 24, height: 20)
+            .background(.primary.opacity(highlighted ? 0.15 : 0), in: RoundedRectangle(cornerRadius: 5))
+            .contentShape(RoundedRectangle(cornerRadius: 5))
+            .onHover { isHovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: highlighted)
     }
 }
 
