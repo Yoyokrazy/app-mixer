@@ -68,8 +68,11 @@ jobs:
       - name: Write release notes
         run: |
           previous=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          readme="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY#readme"
           {
             echo "## Install"
+            echo
+            echo "Requires macOS 15 or later (Apple silicon or Intel). The same commands upgrade an existing install."
             echo
             echo '```sh'
             echo "gh release download $TAG -R $GITHUB_REPOSITORY -p AppMixer.zip -O /tmp/AppMixer.zip --clobber"
@@ -77,6 +80,12 @@ jobs:
             echo "rm -rf /Applications/AppMixer.app && ditto -x -k /tmp/AppMixer.zip /Applications"
             echo "open /Applications/AppMixer.app"
             echo '```'
+            echo
+            echo "## First launch"
+            echo
+            echo "- This build is ad-hoc signed and not notarized. If you downloaded the zip in a browser, clear the quarantine first: \`xattr -dr com.apple.quarantine /Applications/AppMixer.app\`."
+            echo "- Grant **System Audio Recording** when asked (System Settings → Privacy & Security → Screen & System Audio Recording)."
+            echo "- macOS treats each ad-hoc build as a new app, so it asks again after upgrading. To keep the permission, sign with your own certificate before launching: \`codesign --force --sign \"<your identity>\" /Applications/AppMixer.app\`. See [the README]($readme) for details."
             echo
             echo "## Changes"
             echo

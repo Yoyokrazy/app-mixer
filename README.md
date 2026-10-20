@@ -2,7 +2,7 @@
 
 A tiny macOS menu bar app that does one thing: per-app volume.
 
-Click the menu bar icon to see every app that's playing audio, each with its own volume slider and mute button. Levels are remembered per app and re-applied when the app plays again.
+Click the menu bar icon to see every app that's using audio, each with its own volume slider and mute button. Apps that are open but silent (say, a browser paused on a video) are listed too, dimmed, so you can set their level before they play. Levels are remembered per app and re-applied whenever the app is running.
 
 The gear in the popover opens a small settings flyout with one option, **Layout**: *Compact* (default, one line per app, hover the icon for its name) or *Standard* (app name above each slider).
 
@@ -29,11 +29,30 @@ rm -rf /Applications/AppMixer.app && ditto -x -k /tmp/AppMixer.zip /Applications
 open /Applications/AppMixer.app
 ```
 
-The same commands upgrade an existing install. Release builds are ad-hoc signed and not notarized. Downloading with `gh` avoids Gatekeeper's quarantine; if you download the zip in a browser instead, run `xattr -dr com.apple.quarantine /Applications/AppMixer.app` (or use System Settings → Privacy & Security → Open Anyway) before the first launch.
+The same commands upgrade an existing install. Requires macOS 15 or later (Apple silicon or Intel).
 
-On first launch macOS asks for **System Audio Recording** access. Without it App Mixer won't tap anything (a tap without permission just produces silence). If you denied it, re-enable it in System Settings → Privacy & Security → Screen & System Audio Recording. Because release builds are ad-hoc signed, macOS treats each new version as a new app, so expect to grant this again after upgrading.
+### First launch
 
-To start at login, add App Mixer in System Settings → General → Login Items.
+- **Gatekeeper.** Release builds are ad-hoc signed and not notarized. Downloading with `gh` avoids Gatekeeper's quarantine. If you downloaded the zip in a browser instead, macOS will refuse to open it; run `xattr -dr com.apple.quarantine /Applications/AppMixer.app` (or use System Settings → Privacy & Security → Open Anyway).
+- **System Audio Recording.** macOS asks for this permission on first launch. Without it App Mixer won't touch any app's audio (a tap without permission just produces silence) and the popover shows a button to the right settings page. If you denied it, re-enable it in System Settings → Privacy & Security → Screen & System Audio Recording.
+- **Start at login.** Add App Mixer in System Settings → General → Login Items.
+
+### Keeping the permission across upgrades (optional signing)
+
+Because release builds are ad-hoc signed, macOS treats every new version as a different app and asks for System Audio Recording again. To avoid that, sign each install with a certificate of your own, using the same certificate every time, before launching it:
+
+```sh
+security find-identity -v -p codesigning   # list your signing identities
+codesign --force --sign "Apple Development: Your Name (XXXXXXXXXX)" /Applications/AppMixer.app
+```
+
+Any code-signing identity works. If you don't have one, create a free self-signed certificate in Keychain Access → Certificate Assistant → Create a Certificate… (Identity Type: *Self-Signed Root*, Certificate Type: *Code Signing*) and use its name.
+
+If the permission toggle gets out of sync after switching signatures (it's on in Settings but App Mixer still can't change volumes), reset it and relaunch to be asked again:
+
+```sh
+tccutil reset AudioCapture com.yoyokrazy.AppMixer
+```
 
 ## Build from source
 
