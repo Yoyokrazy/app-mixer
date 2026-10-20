@@ -70,7 +70,11 @@ Local builds are signed with the "Apple Development" identity for team `K77TX49C
 
 ## Releasing
 
-Run the **Release** workflow (Actions → Release → Run workflow, or `gh workflow run release.yml -f version=0.2.0`). It builds a universal app on a macOS runner, stamps the version, ad-hoc signs, and publishes `AppMixer.zip` to a new `v<version>` tag and release, with the commits since the previous tag as notes. If arm64 runners are backed up, pick `macos-26-intel` (`-f runner=macos-26-intel`).
+Releases are automatic. Every merge to `main` triggers the **Release** workflow, which builds a universal app on a macOS runner, stamps the version, ad-hoc signs, and publishes `AppMixer.zip` to a new `v<version>` tag and release, with the commits since the previous tag as notes.
+
+- **Version** comes from the [Conventional Commits](https://www.conventionalcommits.org) since the last tag (`scripts/next-version.sh`): a breaking change bumps major, `feat` bumps minor, anything else bumps patch. If everything since the last release is `docs`/`test`/`ci`/`chore`/`style`, nothing is released.
+- **Bursts of merges become one release.** Each merge restarts a 10-minute quiet period (set the `RELEASE_DEBOUNCE_MINUTES` repo variable to change it), and only the newest commit on `main` is released. Publishing is serialized and never cancelled mid-flight, so two releases can't race or end up half-made.
+- **Manual releases** still work: Actions → Release → Run workflow, or `gh workflow run release.yml` (optionally `-f version=1.2.3`, and `-f runner=macos-26-intel` if arm64 runners are backed up). Automatic releases use `macos-26-intel` unless the `RELEASE_RUNNER` repo variable says otherwise.
 
 ## Limitations
 
