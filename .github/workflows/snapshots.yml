@@ -1,0 +1,66 @@
+name: Snapshots
+
+on:
+  pull_request:
+    paths:
+      - AppMixer/**
+      - AppMixerSnapshotTests/**
+      - project.yml
+      - Makefile
+      - .github/workflows/snapshots.yml
+  push:
+    branches: [main]
+    paths:
+      - AppMixer/**
+      - AppMixerSnapshotTests/**
+      - project.yml
+      - Makefile
+      - .github/workflows/snapshots.yml
+  workflow_dispatch:
+    inputs:
+      record:
+        description: Re-record every reference on the runner and upload them as the snapshot-references artifact
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: snapshots-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  snapshots:
+    # Hosted arm64 macOS runners have been failing to get a machine; renders match across architectures within tolerance.
+    runs-on: macos-26-intel
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+
+      # Ad-hoc signed: CI has no signing certificate.
+      - name: Run snapshot tests
+        run: make ${{ inputs.record && 'record-snapshots' || 'snapshots' }} XCODEBUILD_FLAGS="CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM="
+
+      - name: Upload failed snapshots
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: snapshot-failures
+          path: build/snapshot-failures
+          if-no-files-found: ignore
+
+      - name: Upload recorded references
+        if: inputs.record
+        uses: actions/upload-artifact@v7
+        with:
+          name: snapshot-references
+          path: AppMixerSnapshotTests/__Snapshots__
