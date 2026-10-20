@@ -1,6 +1,8 @@
 APP_NAME := AppMixer
 BUNDLE_ID := com.yoyokrazy.AppMixer
 APP := build/Build/Products/Release/$(APP_NAME).app
+# Extra xcodebuild settings, e.g. CI passes version numbers and ad-hoc signing.
+XCODEBUILD_FLAGS ?=
 
 .PHONY: project build run install clean
 
@@ -8,7 +10,7 @@ project:
 	xcodegen generate --quiet
 
 build: project
-	xcodebuild -project $(APP_NAME).xcodeproj -scheme $(APP_NAME) -configuration Release -derivedDataPath build -quiet build
+	xcodebuild -project $(APP_NAME).xcodeproj -scheme $(APP_NAME) -configuration Release -derivedDataPath build -quiet $(XCODEBUILD_FLAGS) build
 
 # Quit gracefully (so taps are torn down) before relaunching.
 run: build

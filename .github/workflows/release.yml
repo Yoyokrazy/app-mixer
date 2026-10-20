@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, without the leading "v" (e.g. 0.2.0)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+
+jobs:
+  release:
+    runs-on: macos-26
+    env:
+      VERSION: ${{ inputs.version }}
+      TAG: v${{ inputs.version }}
+      BUILD_NUMBER: ${{ github.run_number }}
+      APP: build/Build/Products/Release/AppMixer.app
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Validate version
+        run: |
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version must look like 1.2.3 (got '$VERSION')"
+            exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::error::Tag $TAG already exists"
+            exit 1
+          fi
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # Ad-hoc signed: CI has no signing certificate. Fine for local installs, but not notarized.
+      - name: Build
+        run: |
+          make build XCODEBUILD_FLAGS="MARKETING_VERSION=$VERSION CURRENT_PROJECT_VERSION=$BUILD_NUMBER CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM="
+
+      - name: Verify and package
+        run: |
+          codesign --verify --strict "$APP"
+          built=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Contents/Info.plist")
+          if [[ "$built" != "$VERSION" ]]; then
+            echo "::error::Built version $built does not match $VERSION"
+            exit 1
+          fi
+          ditto -c -k --norsrc --noextattr --keepParent "$APP" AppMixer.zip
+          shasum -a 256 AppMixer.zip
+
+      - name: Write release notes
+        run: |
+          previous=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          {
+            echo "## Install"
+            echo
+            echo '```sh'
+            echo "gh release download $TAG -R $GITHUB_REPOSITORY -p AppMixer.zip -O /tmp/AppMixer.zip --clobber"
+            echo "osascript -e 'tell application id \"com.yoyokrazy.AppMixer\" to quit' 2>/dev/null"
+            echo "rm -rf /Applications/AppMixer.app && ditto -x -k /tmp/AppMixer.zip /Applications"
+            echo "open /Applications/AppMixer.app"
+            echo '```'
+            echo
+            echo "## Changes"
+            echo
+            git log --no-merges --pretty='- %s' ${previous:+$previous..}HEAD
+          } > notes.md
+          cat notes.md
+
+      - name: Publish release
+        run: |
+          gh release create "$TAG" AppMixer.zip \
+            --target "$GITHUB_SHA" \
+            --title "App Mixer $VERSION" \
+            --notes-file notes.md

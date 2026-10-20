@@ -18,7 +18,24 @@ Apps at 100% are never tapped, so App Mixer adds no latency or overhead until yo
 
 Taps are rebuilt automatically when the default output device changes, when its sample rate changes (e.g. AirPods switching to the call profile), or when an app gains or loses audio helper processes.
 
-## Build & run
+## Install
+
+Download the latest release with the [GitHub CLI](https://cli.github.com) (no Xcode or XcodeGen needed):
+
+```sh
+gh release download -R Yoyokrazy/app-mixer -p AppMixer.zip -O /tmp/AppMixer.zip --clobber
+osascript -e 'tell application id "com.yoyokrazy.AppMixer" to quit' 2>/dev/null
+rm -rf /Applications/AppMixer.app && ditto -x -k /tmp/AppMixer.zip /Applications
+open /Applications/AppMixer.app
+```
+
+The same commands upgrade an existing install. Release builds are ad-hoc signed and not notarized. Downloading with `gh` avoids Gatekeeper's quarantine; if you download the zip in a browser instead, run `xattr -dr com.apple.quarantine /Applications/AppMixer.app` (or use System Settings → Privacy & Security → Open Anyway) before the first launch.
+
+On first launch macOS asks for **System Audio Recording** access. Without it App Mixer won't tap anything (a tap without permission just produces silence). If you denied it, re-enable it in System Settings → Privacy & Security → Screen & System Audio Recording. Because release builds are ad-hoc signed, macOS treats each new version as a new app, so expect to grant this again after upgrading.
+
+To start at login, add App Mixer in System Settings → General → Login Items.
+
+## Build from source
 
 Requires Xcode and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
 
@@ -28,11 +45,11 @@ make install   # same, but copies to /Applications
 make project   # just generate AppMixer.xcodeproj to open in Xcode
 ```
 
-Signing uses the "Apple Development" identity for team `K77TX49CTD` (see `project.yml`). A stable signature matters: macOS ties the audio-capture permission to it, so ad-hoc builds would re-prompt after every rebuild.
+Local builds are signed with the "Apple Development" identity for team `K77TX49CTD` (see `project.yml`). That stable signature means the audio-capture permission survives rebuilds.
 
-On first launch macOS asks for **System Audio Recording** access. Without it App Mixer won't tap anything (a tap without permission just produces silence). If you denied it, re-enable it in System Settings → Privacy & Security → Screen & System Audio Recording.
+## Releasing
 
-To start at login, add App Mixer in System Settings → General → Login Items.
+Run the **Release** workflow (Actions → Release → Run workflow, or `gh workflow run release.yml -f version=0.2.0`). It builds on a macOS runner, stamps the version, ad-hoc signs, and publishes `AppMixer.zip` to a new `v<version>` tag and release, with the commits since the previous tag as notes.
 
 ## Limitations
 
