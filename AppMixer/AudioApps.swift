@@ -18,6 +18,19 @@ struct AudioApp: Identifiable, Equatable {
     }
 }
 
+/// The parts of `NSRunningApplication` the scanner uses; lets tests stand in fake apps.
+@MainActor
+protocol RunningApp {
+    var processIdentifier: pid_t { get }
+    var bundleIdentifier: String? { get }
+    var bundleURL: URL? { get }
+    var localizedName: String? { get }
+    var icon: NSImage? { get }
+    var activationPolicy: NSApplication.ActivationPolicy { get }
+}
+
+extension NSRunningApplication: RunningApp {}
+
 /// Groups Core Audio's process objects into user-facing apps.
 ///
 /// A process shows up in Core Audio's list once it opens an audio connection and stays there while it
@@ -27,20 +40,34 @@ struct AudioApp: Identifiable, Equatable {
 enum AudioAppScanner {
     static func scan() -> [AudioApp] {
         let ownPID = ProcessInfo.processInfo.processIdentifier
+        let running = NSWorkspace.shared.runningApplications
+        return scan(processes: AudioObjectID.processList, running: running, ownPID: ownPID)
+    }
+
+    /// `scan()` with every system lookup injectable.
+    static func scan<App: RunningApp>(
+        processes: [AudioObjectID],
+        running runningApps: [App],
+        ownPID: pid_t,
+        pid: (AudioObjectID) -> pid_t? = { $0.processPID },
+        isPlaying: (AudioObjectID) -> Bool = { $0.isRunningOutput },
+        responsiblePID: (pid_t) -> pid_t? = responsiblePID(for:),
+        parentPID: (pid_t) -> pid_t? = parentPID(of:)
+    ) -> [AudioApp] {
         let running = Dictionary(
-            NSWorkspace.shared.runningApplications.map { ($0.processIdentifier, $0) },
+            runningApps.map { ($0.processIdentifier, $0) },
             uniquingKeysWith: { first, _ in first }
         )
 
         var apps: [String: AudioApp] = [:]
-        for object in AudioObjectID.processList {
-            guard let pid = object.processPID, pid > 0, pid != ownPID,
-                  let owner = owningApp(of: pid, running: running),
+        for object in processes {
+            guard let pid = pid(object), pid > 0, pid != ownPID,
+                  let owner = owningApp(of: pid, running: running, responsiblePID: responsiblePID, parentPID: parentPID),
                   owner.processIdentifier != ownPID,
                   let bundleID = owner.bundleIdentifier
             else { continue }
 
-            let playing = object.isRunningOutput
+            let playing = isPlaying(object)
             if var app = apps[bundleID] {
                 app.processes.append(object)
                 app.isPlaying = app.isPlaying || playing
@@ -68,8 +95,13 @@ enum AudioAppScanner {
 
     /// Resolves helpers (Safari's WebKit GPU process, Chrome's audio service, ...) to the app the user sees.
     /// Daemons with no owning app (coreaudiod, systemsoundserverd, ...) resolve to nil and are skipped.
-    private static func owningApp(of pid: pid_t, running: [pid_t: NSRunningApplication]) -> NSRunningApplication? {
-        func topLevelApp(_ pid: pid_t) -> NSRunningApplication? {
+    static func owningApp<App: RunningApp>(
+        of pid: pid_t,
+        running: [pid_t: App],
+        responsiblePID: (pid_t) -> pid_t?,
+        parentPID: (pid_t) -> pid_t?
+    ) -> App? {
+        func topLevelApp(_ pid: pid_t) -> App? {
             guard let app = running[pid], let url = app.bundleURL else { return nil }
             // Helpers often live in their own .app nested inside the real one, e.g. "Google Chrome Helper.app".
             let appComponents = url.pathComponents.filter { $0.hasSuffix(".app") }
@@ -77,12 +109,12 @@ enum AudioAppScanner {
         }
 
         if let app = topLevelApp(pid) { return app }
-        if let responsible = responsiblePID(for: pid), let app = topLevelApp(responsible) { return app }
+        if let responsible = responsiblePID(pid), let app = topLevelApp(responsible) { return app }
 
         var current = pid
         var visited: Set<pid_t> = []
         while current > 1, visited.insert(current).inserted {
-            guard let parent = parentPID(of: current), parent != current else { break }
+            guard let parent = parentPID(current), parent != current else { break }
             if let app = topLevelApp(parent) { return app }
             current = parent
         }
@@ -92,14 +124,14 @@ enum AudioAppScanner {
     private typealias ResponsibilityFunction = @convention(c) (pid_t) -> pid_t
 
     /// The same private libsystem call Activity Monitor uses to attribute XPC services to their app.
-    private static func responsiblePID(for pid: pid_t) -> pid_t? {
+    nonisolated static func responsiblePID(for pid: pid_t) -> pid_t? {
         let rtldDefault = UnsafeMutableRawPointer(bitPattern: -2)
         guard let symbol = dlsym(rtldDefault, "responsibility_get_pid_responsible_for_pid") else { return nil }
         let responsible = unsafeBitCast(symbol, to: ResponsibilityFunction.self)(pid)
         return responsible > 0 && responsible != pid ? responsible : nil
     }
 
-    private static func parentPID(of pid: pid_t) -> pid_t? {
+    nonisolated static func parentPID(of pid: pid_t) -> pid_t? {
         var info = kinfo_proc()
         var size = MemoryLayout<kinfo_proc>.size
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]

@@ -11,22 +11,33 @@ import os
 final class CapturePermission {
     enum Status { case notDetermined, authorized, denied }
 
+    /// The TCC calls, swappable so tests can drive this without touching real privacy settings.
+    struct Access {
+        var preflight: @MainActor () -> Status
+        var request: @MainActor (_ completion: @escaping @Sendable (Bool) -> Void) -> Void
+    }
+
     private(set) var status: Status = .notDetermined
     @ObservationIgnored var onChange: (() -> Void)?
     @ObservationIgnored private let logger = Logger(subsystem: "com.yoyokrazy.AppMixer", category: "Permission")
+    @ObservationIgnored private let access: Access
     /// Previews and snapshot tests pin a status that must not be replaced by this machine's real one.
     @ObservationIgnored private var isPinned = false
 
+    init(access: Access = CapturePermission.tcc) {
+        self.access = access
+    }
+
     func refresh() {
         guard !isPinned else { return }
-        update(Self.preflight())
+        update(access.preflight())
     }
 
     func requestIfNeeded() {
         refresh()
-        guard status == .notDetermined, let request = Self.requestFunction else { return }
+        guard status == .notDetermined else { return }
         // TCC calls back on its own queue; @Sendable keeps Swift 6 from assuming main-actor isolation and trapping.
-        request(Self.service, nil) { @Sendable granted in
+        access.request { @Sendable granted in
             Task { @MainActor in self.update(granted ? .authorized : .denied) }
         }
     }
@@ -50,7 +61,15 @@ final class CapturePermission {
     private typealias PreflightFunction = @convention(c) (CFString, CFDictionary?) -> Int
     private typealias RequestFunction = @convention(c) (CFString, CFDictionary?, @escaping @convention(block) (Bool) -> Void) -> Void
 
-    private static func symbol<T>(_ name: String, as type: T.Type) -> T? {
+    static let tcc = Access(
+        preflight: preflight,
+        request: { completion in
+            guard let request = requestFunction else { return }
+            request(service, nil, completion)
+        }
+    )
+
+    static func symbol<T>(_ name: String, as type: T.Type) -> T? {
         guard let handle = dlopen("/System/Library/PrivateFrameworks/TCC.framework/Versions/A/TCC", RTLD_NOW),
               let symbol = dlsym(handle, name)
         else { return nil }
