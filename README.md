@@ -10,7 +10,7 @@ Click the menu bar icon to see every app that's using audio, each with its own v
 
 ## How it works
 
-Uses the Core Audio process-tap API (macOS 14.2+), the same approach as [FineTune](https://github.com/ronitsingh10/FineTune), minus everything except the mixer:
+Uses the Core Audio process-tap API (macOS 14.2+):
 
 1. A **process tap** (`CATapDescription`, `.mutedWhenTapped`) mutes the app at the HAL and exposes its audio as a stream.
 2. A **private aggregate device** pairs that stream with the app's output device: the system default, or the device it's routed to.
@@ -129,4 +129,4 @@ Releases are automatic. Every merge to `main` triggers the **Release** workflow,
 - Changed apps play on App Mixer's chosen device (the system default unless routed). An app that you've pointed at a different device itself (e.g. Zoom set to a headset) will move while it's turned down or routed.
 - The first ~20–90 ms of an app's very first sound can play at full volume on its original device, before App Mixer sees the app's new audio process.
 - Volume tops out at 100%; there's no boost.
-- Permission status is read via the private TCC framework (as FineTune does), since there's no public API for it.
+- Permission status is read via the private TCC framework, since there's no public API for it.

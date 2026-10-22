@@ -4,8 +4,8 @@ import os
 /// "System Audio Recording" (kTCCServiceAudioCapture) permission. Without it, a process tap still mutes
 /// the app but only delivers silence, so App Mixer must never tap while this is denied.
 ///
-/// There's no public API to query or request it, so this calls the private TCC framework (as FineTune
-/// does). If the SPI ever disappears we assume access and let macOS prompt on first tap.
+/// There's no public API to query or request it, so this calls the private TCC framework. If the SPI ever
+/// disappears we assume access and let macOS prompt on first tap.
 @Observable
 @MainActor
 final class CapturePermission {
