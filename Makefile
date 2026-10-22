@@ -5,13 +5,19 @@ TEST_RESULTS := build/TestResults.xcresult
 # Extra xcodebuild settings, e.g. CI passes version numbers and ad-hoc signing.
 XCODEBUILD_FLAGS ?=
 
+# Builds are ad-hoc signed unless DEVELOPMENT_TEAM is set (in the gitignored local.mk or the environment). Signing with
+# your Apple Development certificate keeps macOS's System Audio Recording permission across rebuilds.
+-include local.mk
+DEVELOPMENT_TEAM ?=
+SIGNING := $(if $(DEVELOPMENT_TEAM),CODE_SIGN_IDENTITY="Apple Development" DEVELOPMENT_TEAM=$(DEVELOPMENT_TEAM))
+
 .PHONY: project build test run install clean snapshots record-snapshots adopt-ci-snapshots
 
 project:
 	xcodegen generate --quiet
 
 build: project
-	xcodebuild -project $(APP_NAME).xcodeproj -scheme $(APP_NAME) -configuration Release -destination 'generic/platform=macOS' -derivedDataPath build -quiet $(XCODEBUILD_FLAGS) build
+	xcodebuild -project $(APP_NAME).xcodeproj -scheme $(APP_NAME) -configuration Release -destination 'generic/platform=macOS' -derivedDataPath build -quiet $(SIGNING) $(XCODEBUILD_FLAGS) build
 
 # Unit tests with code coverage, then a per-file coverage summary of the app's sources.
 test: project

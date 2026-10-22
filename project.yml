@@ -26,9 +26,10 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yoyokrazy.AppMixer
+        # Ad-hoc so anyone can build. `make build` signs with your Apple Development certificate when DEVELOPMENT_TEAM is set.
         CODE_SIGN_STYLE: Manual
-        CODE_SIGN_IDENTITY: Apple Development
-        DEVELOPMENT_TEAM: K77TX49CTD
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
         ENABLE_HARDENED_RUNTIME: NO
   # Unit tests, run with `make test`. The app's sources (minus the @main entry point) are compiled in
   # rather than hosted in the app, so tests never launch App Mixer, touch its settings, or need audio hardware.
