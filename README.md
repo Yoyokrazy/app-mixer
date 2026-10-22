@@ -22,7 +22,7 @@ Taps are rebuilt automatically when the default output device changes, when devi
 
 ## Install
 
-Download the latest release with the [GitHub CLI](https://cli.github.com) (no Xcode or XcodeGen needed):
+Requires macOS 15 or later (Apple silicon or Intel). The repository is private, so you need read access (ask the owner to add you as a collaborator) and the [GitHub CLI](https://cli.github.com) signed in with `gh auth login`. No Xcode or XcodeGen needed:
 
 ```sh
 gh release download -R Yoyokrazy/app-mixer -p AppMixer.zip -O /tmp/AppMixer.zip --clobber
@@ -31,7 +31,7 @@ rm -rf /Applications/AppMixer.app && ditto -x -k /tmp/AppMixer.zip /Applications
 open /Applications/AppMixer.app
 ```
 
-The same commands upgrade an existing install. Requires macOS 15 or later (Apple silicon or Intel).
+The same commands upgrade an existing install. App Mixer has no Dock icon or window: look for the sliders icon in the menu bar, and quit it from the bottom of its popover. Quitting returns every app to its normal volume and output.
 
 ### First launch
 
@@ -56,17 +56,37 @@ If the permission toggle gets out of sync after switching signatures (it's on in
 tccutil reset AudioCapture com.yoyokrazy.AppMixer
 ```
 
-## Build from source
-
-Requires Xcode and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
+### Uninstall
 
 ```sh
+osascript -e 'tell application id "com.yoyokrazy.AppMixer" to quit'
+rm -rf /Applications/AppMixer.app
+defaults delete com.yoyokrazy.AppMixer                  # saved levels, routes, and layout
+tccutil reset AudioCapture com.yoyokrazy.AppMixer       # System Audio Recording permission
+```
+
+## Build from source
+
+Requires macOS 15 or later, Xcode 26 or later (CI uses 26.6), and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
+
+```sh
+gh repo clone Yoyokrazy/app-mixer && cd app-mixer
 make run       # generate project, build Release, launch
 make install   # same, but copies to /Applications
 make project   # just generate AppMixer.xcodeproj to open in Xcode
 ```
 
-Local builds are signed with the "Apple Development" identity for team `K77TX49CTD` (see `project.yml`). That stable signature means the audio-capture permission survives rebuilds.
+**Signing.** `make build`/`run`/`install` sign with the maintainer's "Apple Development" certificate (team `K77TX49CTD`, see `project.yml`), so on anyone else's Mac they fail at code signing. Override it with `XCODEBUILD_FLAGS`, which every `make` target passes to `xcodebuild`:
+
+```sh
+# Ad-hoc signature: works everywhere, but macOS asks for System Audio Recording again after each rebuild.
+make run XCODEBUILD_FLAGS="CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM="
+
+# Your own Apple Development certificate: a stable signature, so the permission survives rebuilds.
+make run XCODEBUILD_FLAGS='CODE_SIGN_IDENTITY="Apple Development" DEVELOPMENT_TEAM=<your team ID>'
+```
+
+The test targets (below) are always ad-hoc signed, so `make test` and `make snapshots` need no certificate.
 
 ## Testing
 
